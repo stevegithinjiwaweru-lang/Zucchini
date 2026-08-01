@@ -1,23 +1,21 @@
-import jwt, { Secret, SignOptions } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { env } from "../config/env";
 
 export interface AccessTokenPayload {
-  sub: string;
+  sub: string; // user id
   role: string;
   riderId?: string | null;
 }
 
 export function signAccessToken(payload: AccessTokenPayload): string {
-  const options: SignOptions = {
-    expiresIn: env.accessTokenTtl as SignOptions["expiresIn"],
-  };
-
-  return jwt.sign(payload, env.jwtAccessSecret as Secret, options);
+  return jwt.sign(payload, env.jwtAccessSecret, {
+    expiresIn: env.accessTokenTtl as jwt.SignOptions["expiresIn"],
+  });
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
-  return jwt.verify(token, env.jwtAccessSecret as Secret) as AccessTokenPayload;
+  return jwt.verify(token, env.jwtAccessSecret) as AccessTokenPayload;
 }
 
 // Refresh tokens are random opaque strings; we store a hash of them in the DB

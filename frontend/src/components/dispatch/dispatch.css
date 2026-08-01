@@ -1,0 +1,16 @@
+import React from "react";
+import { Card } from "antd";
+
+const css = `
+.dispatch-page { padding: 12px }
+.dispatch-page .ant-card { border-radius: 12px }
+`; 
+
+const styleEl = document.createElement('style');
+styleEl.innerHTML = css;
+if (typeof window !== 'undefined' && !document.getElementById('dispatch-styles')) {
+  styleEl.id = 'dispatch-styles';
+  document.head.appendChild(styleEl);
+}
+
+export default Card; // this file only ensures styles are injected when module imported

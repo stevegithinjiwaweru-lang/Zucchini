@@ -1,0 +1,37 @@
+{
+  "name": "easybox-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "msw": "msw init public/ --save"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^4.44.0",
+    "antd": "^5.6.0",
+    "axios": "^1.18.1",
+    "leaflet": "^1.9.4",
+    "msw": "^1.2.1",
+    "papaparse": "^5.4.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-icons": "^4.11.0",
+    "react-leaflet": "^4.2.1",
+    "react-query": "^3.39.3",
+    "react-router-dom": "^6.14.1",
+    "recharts": "^3.10.0",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.5.1",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^18.2.28",
+    "@types/react-dom": "^18.2.11",
+    "@vitejs/plugin-react": "^4.3.1",
+    "terser": "^5.48.0",
+    "typescript": "^5.4.2",
+    "vite": "^5.3.0"
+  }
+}

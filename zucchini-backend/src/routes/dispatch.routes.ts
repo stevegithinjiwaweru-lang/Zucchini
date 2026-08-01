@@ -8,15 +8,16 @@ import {
 
 const router = Router();
 
+
 /**
- * All dispatch routes require authentication
+ * All dispatch endpoints require authentication
  */
 router.use(requireAuth);
 
 
 /**
- * Get dispatch queue
- * Pending/unassigned orders for dispatchers
+ * Dispatch queue
+ * Returns pending/unassigned orders for dispatchers
  */
 router.get(
   "/",
@@ -26,7 +27,7 @@ router.get(
 
 
 /**
- * Assign rider to an order
+ * Assign rider to order
  */
 router.post(
   "/assign",

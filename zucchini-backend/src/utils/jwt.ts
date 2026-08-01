@@ -20,6 +20,8 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
   return jwt.verify(token, env.jwtAccessSecret as Secret) as AccessTokenPayload;
 }
 
+// Refresh tokens are random opaque strings; we store a hash of them in the DB
+// so a leaked database dump alone can't be replayed as a valid refresh token.
 export function generateRefreshToken(): { token: string; hash: string } {
   const token = crypto.randomBytes(48).toString("hex");
   const hash = crypto.createHash("sha256").update(token).digest("hex");

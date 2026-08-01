@@ -1,16 +1,15 @@
 import { Request, Response } from "express";
-import prisma from "../utils/prisma";
+import prisma from "../lib/prisma";
 
 
 /**
  * Get pending orders waiting for dispatch
  */
 export async function listDispatches(
-  req: Request,
+  _req: Request,
   res: Response
 ) {
   try {
-
     const dispatches = await prisma.order.findMany({
       where: {
         riderId: null,
@@ -25,63 +24,58 @@ export async function listDispatches(
       },
     });
 
+    return res.json(dispatches);
 
-    res.json(dispatches);
+  } catch (error) {
+    console.error("Dispatch list error:", error);
 
-  } catch(error) {
-
-    console.error(error);
-
-    res.status(500).json({
-      message: "Failed to load dispatch queue"
+    return res.status(500).json({
+      message: "Failed to load dispatch queue",
     });
-
   }
 }
 
 
 /**
- * Assign rider to order
+ * Assign rider to an order
  */
 export async function assignDispatch(
   req: Request,
   res: Response
 ) {
-
   try {
-
     const {
       orderId,
-      riderId
+      riderId,
     } = req.body;
 
 
-    const updatedOrder =
-      await prisma.order.update({
-
-        where:{
-          id: orderId
-        },
-
-        data:{
-          riderId,
-          status:"ASSIGNED"
-        }
-
+    if (!orderId || !riderId) {
+      return res.status(400).json({
+        message: "orderId and riderId are required",
       });
+    }
 
 
-    res.json(updatedOrder);
+    const updatedOrder = await prisma.order.update({
+      where: {
+        id: orderId,
+      },
 
-
-  } catch(error){
-
-    console.error(error);
-
-    res.status(500).json({
-      message:"Assignment failed"
+      data: {
+        riderId,
+        status: "ASSIGNED",
+      },
     });
 
-  }
 
+    return res.json(updatedOrder);
+
+  } catch (error) {
+    console.error("Dispatch assignment error:", error);
+
+    return res.status(500).json({
+      message: "Assignment failed",
+    });
+  }
 }

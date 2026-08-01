@@ -15,6 +15,7 @@ import merchantRoutes from "./routes/merchants.routes";
 import shopifyRoutes from "./routes/shopify.routes";
 import dispatchRoutes from "./routes/dispatch.routes";
 
+
 const app = express();
 
 
@@ -31,9 +32,8 @@ app.use(
 app.use(morgan("dev"));
 
 
-// Shopify Webhooks
-// Must remain BEFORE express.json()
-// because Shopify HMAC verification requires raw body bytes.
+// Shopify webhooks
+// Keep before express.json() because HMAC verification needs raw body
 app.use(
   "/api/shopify",
   express.raw({
@@ -43,7 +43,7 @@ app.use(
 );
 
 
-// Body parsers
+// Body parsing
 app.use(
   express.json({
     limit: "2mb",
@@ -57,7 +57,7 @@ app.use(
 );
 
 
-// Static files
+// Static uploads
 app.use(
   "/uploads",
   express.static(UPLOAD_ROOT)
@@ -77,37 +77,15 @@ app.get(
 
 
 // API Routes
-app.use(
-  "/api/auth",
-  authRoutes
-);
-
-app.use(
-  "/api/orders",
-  orderRoutes
-);
-
-app.use(
-  "/api/riders",
-  riderRoutes
-);
-
-app.use(
-  "/api/merchants",
-  merchantRoutes
-);
+app.use("/api/auth", authRoutes);
+app.use("/api/orders", orderRoutes);
+app.use("/api/riders", riderRoutes);
+app.use("/api/merchants", merchantRoutes);
+app.use("/api/dispatches", dispatchRoutes);
 
 
-// Dispatch module
-app.use(
-  "/api/dispatches",
-  dispatchRoutes
-);
-
-
-// Error handlers
+// Error handling
 app.use(notFoundHandler);
-
 app.use(errorHandler);
 
 

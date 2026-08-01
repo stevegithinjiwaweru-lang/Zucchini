@@ -1,6 +1,8 @@
 import axios from "axios";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+const API_BASE =
+  import.meta.env.VITE_API_URL ||
+  "https://zucchini-backend.onrender.com/api";
 
 const client = axios.create({
   baseURL: API_BASE,
@@ -27,7 +29,9 @@ client.interceptors.request.use(
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+
+    if (status === 401) {
       localStorage.removeItem("accessToken");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");

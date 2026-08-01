@@ -1,7 +1,8 @@
 import { io, Socket } from "socket.io-client";
 
 const SOCKET_URL =
-  import.meta.env.VITE_SOCKET_URL || "http://localhost:4000";
+  import.meta.env.VITE_SOCKET_URL ||
+  "https://zucchini-backend.onrender.com";
 
 let socket: Socket | null = null;
 
@@ -46,7 +47,7 @@ export const initSocket = (): Socket => {
   return socket;
 };
 
-export const getSocket = (): Socket |null => socket;
+export const getSocket = (): Socket | null => socket;
 
 export const disconnectSocket = (): void => {
   if (!socket) return;

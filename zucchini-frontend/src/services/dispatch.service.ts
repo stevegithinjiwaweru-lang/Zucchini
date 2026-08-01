@@ -1,11 +1,11 @@
 import client from "../api/client";
 
+
 export interface DispatchOrder {
   id: string;
   customerName: string;
   phone?: string;
   address?: string;
-  pickup?: string;
   destination?: string;
   amount?: number;
   status?: string;
@@ -14,26 +14,93 @@ export interface DispatchOrder {
   scheduledAt?: string | null;
   lat?: number | null;
   lng?: number | null;
+  merchant?: {
+    id: string;
+    name: string;
+  };
+  rider?: {
+    id: string;
+    name: string;
+  } | null;
   [key: string]: any;
 }
 
-export const fetchPendingDispatchOrders = async (params: any = {}) => {
-  const response = await client.get("/orders", { params: { ...params, status: "PENDING", limit: params.limit || 50 } });
+
+/**
+ * Fetch orders waiting for dispatch
+ * Backend: GET /api/dispatches
+ */
+export const fetchPendingDispatchOrders = async (): Promise<DispatchOrder[]> => {
+  const response = await client.get("/dispatches");
+
+  if (Array.isArray(response.data)) {
+    return response.data;
+  }
+
+  console.error(
+    "Invalid dispatch response:",
+    response.data
+  );
+
+  return [];
+};
+
+
+/**
+ * Assign rider to dispatch order
+ * Backend: POST /api/dispatches/assign
+ */
+export const assignOrder = async (
+  orderId: string,
+  riderId: string
+) => {
+  const response = await client.post(
+    "/dispatches/assign",
+    {
+      orderId,
+      riderId,
+    }
+  );
+
   return response.data;
 };
 
-export const assignOrder = async (orderId: string, riderId: string) => {
-  // backend has POST /orders/:id/assign
-  const response = await client.post(`/orders/${orderId}/assign`, { riderId });
-  return response.data;
+
+/**
+ * Fetch available riders
+ * Backend: GET /api/riders
+ */
+export const fetchRiders = async () => {
+  const response = await client.get("/riders");
+
+  if (Array.isArray(response.data)) {
+    return response.data;
+  }
+
+  if (Array.isArray(response.data?.riders)) {
+    return response.data.riders;
+  }
+
+  console.error(
+    "Invalid riders response:",
+    response.data
+  );
+
+  return [];
 };
 
-export const fetchRiders = async (params: any = {}) => {
-  const response = await client.get("/riders", { params: { limit: params.limit || 200 } });
-  return response.data;
-};
 
-export const createOrder = async (payload: any) => {
-  const response = await client.post('/orders', payload);
+/**
+ * Create manual WhatsApp/manual order
+ * Backend: POST /api/orders
+ */
+export const createOrder = async (
+  payload: any
+) => {
+  const response = await client.post(
+    "/orders",
+    payload
+  );
+
   return response.data;
 };

@@ -28,13 +28,23 @@ export interface DispatchOrder {
 
 /**
  * Fetch orders waiting for dispatch
- * Backend: GET /api/dispatches
+ * Backend: GET /api/orders?status=NEW
+ * (There is no /api/dispatches route — unassigned orders are just orders
+ * with status=NEW on the shared /orders endpoint.)
  */
 export const fetchPendingDispatchOrders = async (): Promise<DispatchOrder[]> => {
-  const response = await client.get("/dispatches");
+  const response = await client.get("/orders", { params: { status: "NEW", limit: 200 } });
 
   if (Array.isArray(response.data)) {
     return response.data;
+  }
+
+  if (Array.isArray(response.data?.items)) {
+    return response.data.items;
+  }
+
+  if (Array.isArray(response.data?.data)) {
+    return response.data.data;
   }
 
   console.error(
@@ -48,16 +58,15 @@ export const fetchPendingDispatchOrders = async (): Promise<DispatchOrder[]> => 
 
 /**
  * Assign rider to dispatch order
- * Backend: POST /api/dispatches/assign
+ * Backend: POST /api/orders/:id/assign  (body: { riderId })
  */
 export const assignOrder = async (
   orderId: string,
   riderId: string
 ) => {
   const response = await client.post(
-    "/dispatches/assign",
+    `/orders/${orderId}/assign`,
     {
-      orderId,
       riderId,
     }
   );

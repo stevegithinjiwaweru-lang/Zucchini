@@ -21,16 +21,6 @@ function normalizeStatusFilter(status?: string) {
   return status;
 }
 
-async function getOrCreateDefaultMerchant() {
-  let merchant = await prisma.merchant.findFirst();
-  if (!merchant) {
-    merchant = await prisma.merchant.create({
-      data: { name: "Zucchini", connector: "APP", status: "CONNECTED" },
-    });
-  }
-  return merchant;
-}
-
 export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { status, riderId, merchantId, source } = req.query as Record<string, string>;
   const limit = Math.min(parseInt(String(req.query.limit || "50"), 10) || 50, 200);
@@ -46,7 +36,7 @@ export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response)
     where,
     take: limit,
     orderBy: { createdAt: "desc" },
-    include: { merchant: true, rider: true },
+    include: { rider: true },
   });
 
   res.json({ ok: true, data: orders, items: orders, total: orders.length });
@@ -57,7 +47,7 @@ export const getMyOrders = asyncHandler(async (req: AuthedRequest, res: Response
   const orders = await prisma.order.findMany({
     where: { riderId: req.user.riderId, status: { in: ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"] } },
     orderBy: { createdAt: "desc" },
-    include: { merchant: true },
+    include: { rider: true },
   });
   res.json({ ok: true, data: orders });
 });
@@ -65,7 +55,7 @@ export const getMyOrders = asyncHandler(async (req: AuthedRequest, res: Response
 export const getOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const order = await prisma.order.findUnique({
     where: { id: req.params.id },
-    include: { merchant: true, rider: true },
+    include: { rider: true },
   });
   if (!order) throw new ApiError(404, "Order not found");
   res.json({ ok: true, data: order });
@@ -75,14 +65,10 @@ export const getOrder = asyncHandler(async (req: AuthedRequest, res: Response) =
 // come from the frontend's map-based LocationPicker.
 export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = createOrderSchema.parse(req.body);
-  const merchant = body.merchantId
-    ? await prisma.merchant.findUnique({ where: { id: body.merchantId } })
-    : await getOrCreateDefaultMerchant();
-  if (!merchant) throw new ApiError(404, "Merchant not found");
 
   const order = await prisma.order.create({
     data: {
-      merchantId: merchant.id,
+      merchantId: body.merchantId || null,
       customerName: body.customerName,
       phone: body.phone,
       address: body.address,
@@ -100,7 +86,7 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
       status: "NEW",
       source: "MANUAL",
     },
-    include: { merchant: true },
+    include: { rider: true },
   });
 
   getIO()?.emit("order:created", order);
@@ -112,18 +98,16 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
 // can break down order volume by channel (Shopify vs WhatsApp vs manual).
 export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = whatsappOrderSchema.parse(req.body);
-  const merchant = body.merchantId
-    ? await prisma.merchant.findUnique({ where: { id: body.merchantId } })
-    : await getOrCreateDefaultMerchant();
-  if (!merchant) throw new ApiError(404, "Merchant not found");
 
-  const noteParts = [body.notes, body.waSenderPhone ? `WhatsApp sender: ${body.waSenderPhone}` : null,
-    body.waMessageExcerpt ? `Message: "${body.waMessageExcerpt.slice(0, 300)}"` : null]
-    .filter(Boolean);
+  const noteParts = [
+    body.notes,
+    body.waSenderPhone ? `WhatsApp sender: ${body.waSenderPhone}` : null,
+    body.waMessageExcerpt ? `Message: "${body.waMessageExcerpt.slice(0, 300)}"` : null,
+  ].filter(Boolean);
 
   const order = await prisma.order.create({
     data: {
-      merchantId: merchant.id,
+      merchantId: body.merchantId || null,
       customerName: body.customerName,
       phone: body.phone,
       address: body.address,
@@ -141,7 +125,7 @@ export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: 
       status: "NEW",
       source: "WHATSAPP",
     },
-    include: { merchant: true },
+    include: { rider: true },
   });
 
   getIO()?.emit("order:created", order);
@@ -155,13 +139,15 @@ export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response
   if (!rider) throw new ApiError(404, "Rider not found");
   if (rider.status === "SUSPENDED") throw new ApiError(409, "Rider is suspended");
 
-  const order = await prisma.order.update({
-    where: { id: req.params.id },
-    data: { riderId, status: "ASSIGNED" },
-    include: { merchant: true, rider: true },
-  }).catch(() => {
-    throw new ApiError(404, "Order not found");
-  });
+  const order = await prisma.order
+    .update({
+      where: { id: req.params.id },
+      data: { riderId, status: "ASSIGNED" },
+      include: { rider: true },
+    })
+    .catch(() => {
+      throw new ApiError(404, "Order not found");
+    });
 
   await prisma.rider.update({ where: { id: riderId }, data: { status: "BUSY" } });
 
@@ -181,7 +167,7 @@ export const updateOrderStatus = asyncHandler(async (req: AuthedRequest, res: Re
       status,
       deliveredAt: status === "DELIVERED" ? new Date() : existing.deliveredAt,
     },
-    include: { merchant: true, rider: true },
+    include: { rider: true },
   });
 
   // Free up the rider once a delivery reaches a terminal state.
@@ -207,11 +193,7 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
   const file = (req as any).file as Express.Multer.File | undefined;
   if (!file) throw new ApiError(400, "No CSV file uploaded");
 
-  const merchantId = req.body?.merchantId;
-  const merchant = merchantId
-    ? await prisma.merchant.findUnique({ where: { id: merchantId } })
-    : await getOrCreateDefaultMerchant();
-  if (!merchant) throw new ApiError(404, "Merchant not found");
+  const merchantId = req.body?.merchantId || null;
 
   const rows = parseCsv(file.buffer.toString("utf8"));
 
@@ -226,7 +208,7 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
       }
       await prisma.order.create({
         data: {
-          merchantId: merchant.id,
+          merchantId: merchantId || null,
           customerName: row.customername,
           phone: row.phone,
           address: row.address,
@@ -248,7 +230,7 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
   }
 
   if (imported > 0) {
-    getIO()?.emit("orders:bulk-imported", { merchantId: merchant.id, count: imported });
+    getIO()?.emit("orders:bulk-imported", { merchantId: merchantId || null, count: imported });
   }
 
   res.status(errors.length && imported === 0 ? 400 : 201).json({
@@ -264,12 +246,14 @@ export const uploadPod = asyncHandler(async (req: AuthedRequest, res: Response) 
   if (!file) throw new ApiError(400, "No file uploaded");
 
   const podUrl = `/uploads/pod/${file.filename}`;
-  const order = await prisma.order.update({
-    where: { id: req.params.id },
-    data: { podUrl },
-  }).catch(() => {
-    throw new ApiError(404, "Order not found");
-  });
+  const order = await prisma.order
+    .update({
+      where: { id: req.params.id },
+      data: { podUrl },
+    })
+    .catch(() => {
+      throw new ApiError(404, "Order not found");
+    });
 
   res.json({ ok: true, data: order });
 });

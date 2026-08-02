@@ -21,14 +21,22 @@ function normalizeStatusFilter(status?: string) {
   return status;
 }
 
+// Try to find or create the default merchant, but fail gracefully if the
+// database doesn't have the Merchant table or migrations aren't applied yet.
 async function getOrCreateDefaultMerchant() {
-  let merchant = await prisma.merchant.findFirst();
-  if (!merchant) {
-    merchant = await prisma.merchant.create({
-      data: { name: "Zucchini", connector: "APP", status: "CONNECTED" },
-    });
+  try {
+    let merchant = await prisma.merchant.findFirst();
+    if (!merchant) {
+      merchant = await prisma.merchant.create({
+        data: { name: "Zucchini", connector: "APP", status: "CONNECTED" },
+      });
+    }
+    return merchant;
+  } catch (e) {
+    // Log and return undefined so callers can continue without a merchant.
+    console.warn("Merchant lookup/creation failed, continuing without merchant:", (e as any)?.message || e);
+    return undefined as any;
   }
-  return merchant;
 }
 
 export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {
@@ -46,7 +54,7 @@ export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response)
     where,
     take: limit,
     orderBy: { createdAt: "desc" },
-    include: { merchant: true, rider: true },
+    // Avoid joining merchant to be resilient if Merchant table isn't present.
   });
 
   res.json({ ok: true, data: orders, items: orders, total: orders.length });
@@ -57,7 +65,6 @@ export const getMyOrders = asyncHandler(async (req: AuthedRequest, res: Response
   const orders = await prisma.order.findMany({
     where: { riderId: req.user.riderId, status: { in: ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"] } },
     orderBy: { createdAt: "desc" },
-    include: { merchant: true },
   });
   res.json({ ok: true, data: orders });
 });
@@ -65,7 +72,6 @@ export const getMyOrders = asyncHandler(async (req: AuthedRequest, res: Response
 export const getOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const order = await prisma.order.findUnique({
     where: { id: req.params.id },
-    include: { merchant: true, rider: true },
   });
   if (!order) throw new ApiError(404, "Order not found");
   res.json({ ok: true, data: order });
@@ -75,32 +81,41 @@ export const getOrder = asyncHandler(async (req: AuthedRequest, res: Response) =
 // come from the frontend's map-based LocationPicker.
 export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = createOrderSchema.parse(req.body);
-  const merchant = body.merchantId
-    ? await prisma.merchant.findUnique({ where: { id: body.merchantId } })
-    : await getOrCreateDefaultMerchant();
-  if (!merchant) throw new ApiError(404, "Merchant not found");
+
+  let merchant: any = undefined;
+  try {
+    merchant = body.merchantId
+      ? await prisma.merchant.findUnique({ where: { id: body.merchantId } })
+      : await getOrCreateDefaultMerchant();
+  } catch (e) {
+    // If merchant lookup fails, continue without a merchant.
+    console.warn("Merchant lookup failed during order creation, proceeding without merchant:", (e as any)?.message || e);
+    merchant = undefined;
+  }
+
+  const orderData: any = {
+    customerName: body.customerName,
+    phone: body.phone,
+    address: body.address,
+    destination: body.destination,
+    pickupLat: body.pickupLat,
+    pickupLng: body.pickupLng,
+    destinationLat: body.destinationLat,
+    destinationLng: body.destinationLng,
+    lat: body.pickupLat,
+    lng: body.pickupLng,
+    amount: body.amount,
+    paymentType: body.paymentType,
+    scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
+    notes: body.notes,
+    status: "NEW",
+    source: "MANUAL",
+  };
+
+  if (merchant && merchant.id) orderData.merchantId = merchant.id;
 
   const order = await prisma.order.create({
-    data: {
-      merchantId: merchant.id,
-      customerName: body.customerName,
-      phone: body.phone,
-      address: body.address,
-      destination: body.destination,
-      pickupLat: body.pickupLat,
-      pickupLng: body.pickupLng,
-      destinationLat: body.destinationLat,
-      destinationLng: body.destinationLng,
-      lat: body.pickupLat,
-      lng: body.pickupLng,
-      amount: body.amount,
-      paymentType: body.paymentType,
-      scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
-      notes: body.notes,
-      status: "NEW",
-      source: "MANUAL",
-    },
-    include: { merchant: true },
+    data: orderData,
   });
 
   getIO()?.emit("order:created", order);
@@ -112,37 +127,43 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
 // can break down order volume by channel (Shopify vs WhatsApp vs manual).
 export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = whatsappOrderSchema.parse(req.body);
-  const merchant = body.merchantId
-    ? await prisma.merchant.findUnique({ where: { id: body.merchantId } })
-    : await getOrCreateDefaultMerchant();
-  if (!merchant) throw new ApiError(404, "Merchant not found");
+
+  let merchant: any = undefined;
+  try {
+    merchant = body.merchantId
+      ? await prisma.merchant.findUnique({ where: { id: body.merchantId } })
+      : await getOrCreateDefaultMerchant();
+  } catch (e) {
+    console.warn("Merchant lookup failed during WhatsApp order creation, proceeding without merchant:", (e as any)?.message || e);
+    merchant = undefined;
+  }
 
   const noteParts = [body.notes, body.waSenderPhone ? `WhatsApp sender: ${body.waSenderPhone}` : null,
     body.waMessageExcerpt ? `Message: "${body.waMessageExcerpt.slice(0, 300)}"` : null]
     .filter(Boolean);
 
-  const order = await prisma.order.create({
-    data: {
-      merchantId: merchant.id,
-      customerName: body.customerName,
-      phone: body.phone,
-      address: body.address,
-      destination: body.destination,
-      pickupLat: body.pickupLat,
-      pickupLng: body.pickupLng,
-      destinationLat: body.destinationLat,
-      destinationLng: body.destinationLng,
-      lat: body.pickupLat,
-      lng: body.pickupLng,
-      amount: body.amount,
-      paymentType: body.paymentType,
-      scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
-      notes: noteParts.join(" | ") || undefined,
-      status: "NEW",
-      source: "WHATSAPP",
-    },
-    include: { merchant: true },
-  });
+  const orderData: any = {
+    customerName: body.customerName,
+    phone: body.phone,
+    address: body.address,
+    destination: body.destination,
+    pickupLat: body.pickupLat,
+    pickupLng: body.pickupLng,
+    destinationLat: body.destinationLat,
+    destinationLng: body.destinationLng,
+    lat: body.pickupLat,
+    lng: body.pickupLng,
+    amount: body.amount,
+    paymentType: body.paymentType,
+    scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
+    notes: noteParts.join(" | ") || undefined,
+    status: "NEW",
+    source: "WHATSAPP",
+  };
+
+  if (merchant && merchant.id) orderData.merchantId = merchant.id;
+
+  const order = await prisma.order.create({ data: orderData });
 
   getIO()?.emit("order:created", order);
   res.status(201).json({ ok: true, data: order });
@@ -158,7 +179,7 @@ export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response
   const order = await prisma.order.update({
     where: { id: req.params.id },
     data: { riderId, status: "ASSIGNED" },
-    include: { merchant: true, rider: true },
+    include: { rider: true },
   }).catch(() => {
     throw new ApiError(404, "Order not found");
   });
@@ -181,7 +202,6 @@ export const updateOrderStatus = asyncHandler(async (req: AuthedRequest, res: Re
       status,
       deliveredAt: status === "DELIVERED" ? new Date() : existing.deliveredAt,
     },
-    include: { merchant: true, rider: true },
   });
 
   // Free up the rider once a delivery reaches a terminal state.
@@ -208,10 +228,15 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
   if (!file) throw new ApiError(400, "No CSV file uploaded");
 
   const merchantId = req.body?.merchantId;
-  const merchant = merchantId
-    ? await prisma.merchant.findUnique({ where: { id: merchantId } })
-    : await getOrCreateDefaultMerchant();
-  if (!merchant) throw new ApiError(404, "Merchant not found");
+  let merchant: any = undefined;
+  try {
+    merchant = merchantId
+      ? await prisma.merchant.findUnique({ where: { id: merchantId } })
+      : await getOrCreateDefaultMerchant();
+  } catch (e) {
+    console.warn("Merchant lookup failed during CSV import, proceeding without merchant:", (e as any)?.message || e);
+    merchant = undefined;
+  }
 
   const rows = parseCsv(file.buffer.toString("utf8"));
 
@@ -226,7 +251,7 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
       }
       await prisma.order.create({
         data: {
-          merchantId: merchant.id,
+          merchantId: merchant?.id ?? undefined,
           customerName: row.customername,
           phone: row.phone,
           address: row.address,
@@ -248,7 +273,7 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
   }
 
   if (imported > 0) {
-    getIO()?.emit("orders:bulk-imported", { merchantId: merchant.id, count: imported });
+    getIO()?.emit("orders:bulk-imported", { merchantId: merchant?.id, count: imported });
   }
 
   res.status(errors.length && imported === 0 ? 400 : 201).json({

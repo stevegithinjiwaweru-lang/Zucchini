@@ -56,18 +56,10 @@ const ACTIVE_DISPATCH_STATUSES = [
   "ARRIVED",
 ];
 
-// Accept common spellings used in seed/docs
-const ZUCCHINI_NAMES = new Set(["zucchini", "zuchinni"]);
-
 const Dashboard: React.FC = () => {
   const { data: ordersData, isLoading: ordersLoading } = useQuery({
     queryKey: ["dashboard-orders"],
     queryFn: async () => (await client.get("/orders", { params: { limit: 100 } })).data,
-  });
-
-  const { data: merchantsData, isLoading: merchantsLoading } = useQuery({
-    queryKey: ["dashboard-merchants"],
-    queryFn: async () => (await client.get("/merchants")).data,
   });
 
   const { data: ridersData, isLoading: ridersLoading } = useQuery({
@@ -81,41 +73,22 @@ const Dashboard: React.FC = () => {
   });
 
   const orders = asList(ordersData, "items");
-  const merchants = asList(merchantsData, "items");
   const riders = asList(ridersData, "items");
   const dispatches = asList(dispatchesData, "dispatches");
 
-  // Build merchant lookup to detect Zucchini by id
-  const merchantNameById = new Map<string, string>();
-  for (const m of merchants) merchantNameById.set(m.id, (m.name || "").toLowerCase());
-
-  // Filter everything to Zucchini-only (client-side)
-  const isZucchiniOrder = (o: any) => {
-    const nameFromOrder = (o.merchant?.name || "").toLowerCase();
-    if (nameFromOrder && ZUCCHINI_NAMES.has(nameFromOrder)) return true;
-    const nameFromId = merchantNameById.get(o.merchantId || "") || "";
-    return ZUCCHINI_NAMES.has(nameFromId);
-  };
-
-  const filteredOrders = orders.filter(isZucchiniOrder);
-
-  const loading = ordersLoading || merchantsLoading || ridersLoading || dispatchesLoading;
+  const loading = ordersLoading || ridersLoading || dispatchesLoading;
 
   const days = useMemo(last7Days, []);
 
   const stats = useMemo(() => {
-    const ordersTodayList = filteredOrders.filter((o: any) => isToday(o.createdAt));
-    const deliveredTodayList = filteredOrders.filter(
-      (o: any) => o.status === "DELIVERED" && isToday(o.updatedAt)
-    );
-    const pending = filteredOrders.filter((o: any) => !FINAL_STATUSES.includes(o.status));
-    const failed = filteredOrders.filter((o: any) => o.status === "FAILED");
-    const activeRiders = riders.filter((r: any) =>
-      ["AVAILABLE", "BUSY", "IN_DELIVERY"].includes(r.status)
-    );
+    const ordersTodayList = orders.filter((o: any) => isToday(o.createdAt));
+    const deliveredTodayList = orders.filter((o: any) => o.status === "DELIVERED" && isToday(o.updatedAt));
+    const pending = orders.filter((o: any) => !FINAL_STATUSES.includes(o.status));
+    const failed = orders.filter((o: any) => o.status === "FAILED");
+    const activeRiders = riders.filter((r: any) => ["AVAILABLE", "BUSY", "IN_DELIVERY"].includes(r.status));
 
     const buildTrend = (predicate: (o: any) => boolean) =>
-      days.map((day) => filteredOrders.filter((o: any) => predicate(o) && dayKey(new Date(o.createdAt)) === day).length);
+      days.map((day) => orders.filter((o: any) => predicate(o) && dayKey(new Date(o.createdAt)) === day).length);
 
     return {
       ordersToday: ordersTodayList.length,
@@ -129,28 +102,25 @@ const Dashboard: React.FC = () => {
       activeRiders: activeRiders.length,
       totalRiders: riders.length,
     };
-  }, [filteredOrders, riders, days]);
+  }, [orders, riders, days]);
 
   const ordersOverviewData = useMemo(
     () =>
       days.map((day) => {
-        const dayOrders = filteredOrders.filter((o: any) => dayKey(new Date(o.createdAt)) === day);
+        const dayOrders = orders.filter((o: any) => dayKey(new Date(o.createdAt)) === day);
         return {
           day: dayLabel(day),
           Delivered: dayOrders.filter((o: any) => o.status === "DELIVERED").length,
-          "In Transit": dayOrders.filter((o: any) =>
-            ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"].includes(o.status)
-          ).length,
+          "In Transit": dayOrders.filter((o: any) => ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"].includes(o.status)).length,
         };
       }),
-    [filteredOrders, days]
+    [orders, days]
   );
 
-  const ordersByMerchant: DonutSlice[] = useMemo(() => {
-    // Since this is Zucchini-only, either show one slice for Zucchini or the distribution of sub-sources
+  const ordersBySource: DonutSlice[] = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const o of filteredOrders) {
-      const name = o.merchant?.name || merchants.find((m: any) => m.id === o.merchantId)?.name || "Unknown";
+    for (const o of orders) {
+      const name = o.merchant?.name || o.merchantId || "Unknown";
       counts.set(name, (counts.get(name) || 0) + 1);
     }
     const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
@@ -163,11 +133,10 @@ const Dashboard: React.FC = () => {
     }));
     if (rest > 0) slices.push({ name: "Other", value: rest, color: STATUS.muted });
     return slices;
-  }, [filteredOrders, merchants]);
+  }, [orders]);
 
   const riderStatusData: DonutSlice[] = useMemo(() => {
-    const byStatus = (statuses: string[]) =>
-      riders.filter((r: any) => statuses.includes(r.status)).length;
+    const byStatus = (statuses: string[]) => riders.filter((r: any) => statuses.includes(r.status)).length;
     return [
       { name: "Available", value: byStatus(["AVAILABLE"]), color: STATUS.good },
       { name: "Busy", value: byStatus(["BUSY", "IN_DELIVERY"]), color: STATUS.warning },
@@ -177,48 +146,28 @@ const Dashboard: React.FC = () => {
   }, [riders]);
 
   const bottomStats = useMemo(() => {
-    const filteredDispatches = dispatches.filter((d: any) => {
-      // dispatches reference orders by orderReference; attempt to map dispatch -> order merchant via order object if loaded
-      const order = d.order;
-      if (order) return isZucchiniOrder(order);
-      // if no order payload is present, conservatively include the dispatch (we cannot contact backend)
-      return true;
-    });
+    const filteredDispatches = dispatches; // no merchant filtering
 
-    const finished = filteredDispatches.filter((d: any) =>
-      ["DELIVERED", "FAILED"].includes(d.status)
-    );
+    const finished = filteredDispatches.filter((d: any) => ["DELIVERED", "FAILED"].includes(d.status));
     const successRate = finished.length
-      ? Math.round(
-          (finished.filter((d: any) => d.status === "DELIVERED").length / finished.length) * 100
-        )
+      ? Math.round((finished.filter((d: any) => d.status === "DELIVERED").length / finished.length) * 100)
       : 0;
 
-    const timedDeliveries = filteredDispatches.filter(
-      (d: any) => d.actualPickupAt && d.actualDeliveryAt
-    );
+    const timedDeliveries = filteredDispatches.filter((d: any) => d.actualPickupAt && d.actualDeliveryAt);
     const avgMinutes = timedDeliveries.length
       ? Math.round(
           timedDeliveries.reduce((sum: number, d: any) => {
-            const mins =
-              (new Date(d.actualDeliveryAt).getTime() - new Date(d.actualPickupAt).getTime()) /
-              60000;
+            const mins = (new Date(d.actualDeliveryAt).getTime() - new Date(d.actualPickupAt).getTime()) / 60000;
             return sum + mins;
           }, 0) / timedDeliveries.length
         )
       : null;
 
-    const cashToday = filteredDispatches
-      .filter((d: any) => d.podCollected && isToday(d.actualDeliveryAt))
-      .reduce((sum: number, d: any) => sum + (d.podAmount || 0), 0);
+    const cashToday = filteredDispatches.filter((d: any) => d.podCollected && isToday(d.actualDeliveryAt)).reduce((sum: number, d: any) => sum + (d.podAmount || 0), 0);
 
-    const utilization = riders.length
-      ? Math.round((stats.activeRiders / riders.length) * 100)
-      : 0;
+    const utilization = riders.length ? Math.round((stats.activeRiders / riders.length) * 100) : 0;
 
-    const activeDispatches = filteredDispatches.filter((d: any) =>
-      ACTIVE_DISPATCH_STATUSES.includes(d.status)
-    ).length;
+    const activeDispatches = filteredDispatches.filter((d: any) => ACTIVE_DISPATCH_STATUSES.includes(d.status)).length;
 
     return { successRate, avgMinutes, cashToday, utilization, activeDispatches };
   }, [dispatches, riders, stats.activeRiders]);
@@ -239,44 +188,19 @@ const Dashboard: React.FC = () => {
       {/* Top KPI row */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={5}>
-          <StatCard
-            label="Orders Today"
-            value={stats.ordersToday}
-            trend={stats.ordersTrend}
-            trendColor={CATEGORICAL[4]}
-          />
+          <StatCard label="Orders Today" value={stats.ordersToday} trend={stats.ordersTrend} trendColor={CATEGORICAL[4]} />
         </Col>
         <Col span={5}>
-          <StatCard
-            label="Delivered Today"
-            value={stats.deliveredToday}
-            trend={stats.deliveredTrend}
-            trendColor={STATUS.good}
-          />
+          <StatCard label="Delivered Today" value={stats.deliveredToday} trend={stats.deliveredTrend} trendColor={STATUS.good} />
         </Col>
         <Col span={5}>
-          <StatCard
-            label="Pending Orders"
-            value={stats.pending}
-            trend={stats.pendingTrend}
-            trendColor={STATUS.warning}
-          />
+          <StatCard label="Pending Orders" value={stats.pending} trend={stats.pendingTrend} trendColor={STATUS.warning} />
         </Col>
         <Col span={5}>
-          <StatCard
-            label="Failed Deliveries"
-            value={stats.failed}
-            trend={stats.failedTrend}
-            trendColor={STATUS.critical}
-          />
+          <StatCard label="Failed Deliveries" value={stats.failed} trend={stats.failedTrend} trendColor={STATUS.critical} />
         </Col>
         <Col span={4}>
-          <StatCard
-            label="Active Riders"
-            value={`${stats.activeRiders}`}
-            delta={`of ${stats.totalRiders} total`}
-            deltaTone="muted"
-          />
+          <StatCard label="Active Riders" value={`${stats.activeRiders}`} delta={`of ${stats.totalRiders} total`} deltaTone="muted" />
         </Col>
       </Row>
 
@@ -298,32 +222,20 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col span={7}>
-          <Card title="Orders by Merchant" style={{ height: "100%" }}>
-            {ordersByMerchant.length ? (
-              <DonutChart
-                data={ordersByMerchant}
-                centerValue={filteredOrders.length}
-                centerLabel="Total Orders"
-              />
+          <Card title="Orders by Source" style={{ height: "100%" }}>
+            {ordersBySource.length ? (
+              <DonutChart data={ordersBySource} centerValue={orders.length} centerLabel="Total Orders" />
             ) : (
-              <div style={{ color: "#898781", textAlign: "center", padding: "40px 0" }}>
-                No orders yet
-              </div>
+              <div style={{ color: "#898781", textAlign: "center", padding: "40px 0" }}>No orders yet</div>
             )}
           </Card>
         </Col>
         <Col span={7}>
           <Card title="Rider Status" style={{ height: "100%" }}>
             {riderStatusData.length ? (
-              <DonutChart
-                data={riderStatusData}
-                centerValue={riders.length}
-                centerLabel="Total Riders"
-              />
+              <DonutChart data={riderStatusData} centerValue={riders.length} centerLabel="Total Riders" />
             ) : (
-              <div style={{ color: "#898781", textAlign: "center", padding: "40px 0" }}>
-                No riders yet
-              </div>
+              <div style={{ color: "#898781", textAlign: "center", padding: "40px 0" }}>No riders yet</div>
             )}
           </Card>
         </Col>
@@ -346,34 +258,22 @@ const Dashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredOrders.length ? (
-                    filteredOrders.slice(0, 8).map((o: any) => (
+                  {orders.length ? (
+                    orders.slice(0, 8).map((o: any) => (
                       <tr key={o.id}>
-                        <td>{o.id.slice(0, 8).toUpperCase()}</td>
+                        <td>{o.id?.slice(0, 8).toUpperCase()}</td>
                         <td>{o.merchant?.name || "N/A"}</td>
                         <td>{o.customerName}</td>
                         <td>KSh {o.amount}</td>
                         <td>
-                          <Tag
-                            color={
-                              o.status === "DELIVERED"
-                                ? "success"
-                                : o.status === "FAILED" || o.status === "RETURNED"
-                                ? "error"
-                                : "warning"
-                            }
-                          >
-                            {o.status}
-                          </Tag>
+                          <Tag color={o.status === "DELIVERED" ? "success" : o.status === "FAILED" || o.status === "RETURNED" ? "error" : "warning"}>{o.status}</Tag>
                         </td>
                         <td>{o.rider?.name || "Unassigned"}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} style={{ textAlign: "center" }}>
-                        No orders found
-                      </td>
+                      <td colSpan={6} style={{ textAlign: "center" }}>No orders found</td>
                     </tr>
                   )}
                 </tbody>
@@ -382,17 +282,10 @@ const Dashboard: React.FC = () => {
           </Card>
         </Col>
         <Col span={10}>
-          <Card
-            title="Live Tracking"
-            style={{ height: "100%" }}
-            extra={<Link to="/tracking">View Full Map</Link>}
-          >
+          <Card title="Live Tracking" style={{ height: "100%" }} extra={<Link to="/tracking">View Full Map</Link>}>
             <div style={{ height: 300 }}>
               <MapContainer center={center} zoom={11} style={{ height: "100%", borderRadius: 10 }}>
-                <TileLayer
-                  attribution="&copy; OpenStreetMap contributors"
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
+                <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                 {mappableRiders.map((r: any) => (
                   <Marker key={r.id} position={[r.lastLat, r.lastLng]}>
                     <Popup>
@@ -404,9 +297,7 @@ const Dashboard: React.FC = () => {
               </MapContainer>
             </div>
             {mappableRiders.length === 0 && (
-              <p style={{ textAlign: "center", color: "#898781", marginTop: 8 }}>
-                No live rider locations yet
-              </p>
+              <p style={{ textAlign: "center", color: "#898781", marginTop: 8 }}>No live rider locations yet</p>
             )}
           </Card>
         </Col>
@@ -415,23 +306,13 @@ const Dashboard: React.FC = () => {
       {/* Bottom summary row */}
       <Row gutter={16}>
         <Col span={5}>
-          <StatCard
-            label="Delivery Success Rate"
-            value={`${bottomStats.successRate}%`}
-            deltaTone="good"
-          />
+          <StatCard label="Delivery Success Rate" value={`${bottomStats.successRate}%`} deltaTone="good" />
         </Col>
         <Col span={5}>
-          <StatCard
-            label="Average Delivery Time"
-            value={bottomStats.avgMinutes != null ? `${bottomStats.avgMinutes} min` : "N/A"}
-          />
+          <StatCard label="Average Delivery Time" value={bottomStats.avgMinutes != null ? `${bottomStats.avgMinutes} min` : "N/A"} />
         </Col>
         <Col span={5}>
-          <StatCard
-            label="Cash Collected Today"
-            value={`KSh ${bottomStats.cashToday.toLocaleString()}`}
-          />
+          <StatCard label="Cash Collected Today" value={`KSh ${bottomStats.cashToday.toLocaleString()}`} />
         </Col>
         <Col span={5}>
           <StatCard label="Rider Utilization" value={`${bottomStats.utilization}%`} />

@@ -8,7 +8,7 @@ const ZUCCHINI_NAMES = new Set(["zucchini", "zuchinni"]);
 
 const fetchMerchants = async () => {
   const { data } = await client.get("/merchants");
-  return Array.isArray(data?.items) ? data.items : [];
+  return Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
 };
 
 export default function DispatchOrderUpload() {
@@ -18,13 +18,12 @@ export default function DispatchOrderUpload() {
 
   const { data: merchants = [] } = useQuery({ queryKey: ["merchants"], queryFn: fetchMerchants });
 
+  // Find Zucchini merchant if it exists; if not, we allow creating orders without
+  // a merchantId so the app continues to function after the Merchant model is removed.
   const zucchini = (merchants || []).find((m: any) => ZUCCHINI_NAMES.has((m?.name || "").toLowerCase()));
 
   const handleCreate = async (values: any) => {
-    if (!zucchini) return message.error("Zucchini merchant not found");
-
-    const payload = {
-      merchantId: zucchini.id,
+    const payload: any = {
       customerName: values.customerName,
       phone: values.phone,
       address: values.address,
@@ -34,23 +33,24 @@ export default function DispatchOrderUpload() {
       lng: values.lng ? Number(values.lng) : undefined,
     };
 
+    // Only include merchantId if zucchini integration is present
+    if (zucchini && zucchini.id) payload.merchantId = zucchini.id;
+
     try {
       const { data } = await client.post("/orders", payload);
-      message.success("Order created: " + (data?.order?.id ?? "(no id)"));
+      message.success("Order created: " + (data?.data?.id ?? data?.id ?? "(no id)"));
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: ["orders"] });
     } catch (err: any) {
       console.error(err);
-      message.error(err?.response?.data?.error || err?.message || "Failed to create order");
+      message.error(err?.message || "Failed to create order");
     }
   };
 
   const handleCsv = async (file: any) => {
-    if (!zucchini) return message.error("Zucchini merchant not found");
-
     const fd = new FormData();
     fd.append("file", file);
-    fd.append("merchantId", zucchini.id);
+    if (zucchini && zucchini.id) fd.append("merchantId", zucchini.id);
 
     try {
       setUploading(true);
@@ -62,7 +62,7 @@ export default function DispatchOrderUpload() {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
     } catch (err: any) {
       console.error(err);
-      message.error(err?.response?.data?.error || err?.message || "CSV upload failed");
+      message.error(err?.message || "CSV upload failed");
     } finally {
       setUploading(false);
     }
@@ -71,42 +71,35 @@ export default function DispatchOrderUpload() {
   return (
     <Card title="Create / Upload Zucchini Orders" style={{ marginBottom: 16 }}>
       {!zucchini && (
-        <div style={{ color: "#ff4d4f", marginBottom: 12 }}>
-          Zucchini merchant not found. Please ensure the Zucchini integration exists in Merchants.
+        <div style={{ color: "#faad14", marginBottom: 12 }}>
+          Zucchini merchant not found. Orders will be created without a merchant association.
         </div>
       )}
 
       <Form form={form} layout="vertical" onFinish={handleCreate}>
-        <Form.Item name="customerName" label="Customer name" rules={[{ required: true }]}>
+        <Form.Item name="customerName" label="Customer name" rules={[{ required: true }]}> 
           <Input />
         </Form.Item>
-        <Form.Item name="phone" label="Phone" rules={[{ required: true }]}>
+        <Form.Item name="phone" label="Phone" rules={[{ required: true }]}> 
           <Input />
         </Form.Item>
-        <Form.Item name="address" label="Address" rules={[{ required: true }]}>
-          <Input.TextArea rows={2} />
+        <Form.Item name="address" label="Address" rules={[{ required: true }]}> 
+          <Input />
         </Form.Item>
-        <Form.Item name="amount" label="Amount (KSh)">
-          <Input type="number" />
-        </Form.Item>
-
         <Form.Item>
           <Space>
-            <Button type="primary" htmlType="submit" disabled={!zucchini}>
+            <Button type="primary" htmlType="submit">
               Create Order
             </Button>
             <Upload
-              maxCount={1}
-              accept=".csv"
               beforeUpload={(file) => {
                 handleCsv(file);
                 return false;
               }}
               showUploadList={false}
-              disabled={!zucchini}
             >
-              <Button icon={<UploadOutlined />} loading={uploading} disabled={!zucchini}>
-                Upload CSV (WhatsApp orders)
+              <Button icon={<UploadOutlined />} loading={uploading}>
+                Upload CSV
               </Button>
             </Upload>
           </Space>

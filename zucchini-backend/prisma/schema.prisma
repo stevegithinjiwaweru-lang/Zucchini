@@ -112,8 +112,8 @@ model Merchant {
 
 model Order {
   id             String      @id @default(cuid())
-  merchantId     String
-  merchant       Merchant    @relation(fields: [merchantId], references: [id])
+  merchantId     String?     // made nullable in preparation for removing Merchant dependency
+  merchant       Merchant?   @relation(fields: [merchantId], references: [id])
   customerName   String
   phone          String
   address        String

@@ -1,6 +1,4 @@
 import axios from "axios";
-import { normalizeApiResponse } from "../utils/normalize";
-import { message } from "antd";
 
 const API_BASE =
   import.meta.env.VITE_API_URL ||
@@ -20,7 +18,7 @@ client.interceptors.request.use(
 
     if (token) {
       config.headers = config.headers ?? {};
-      (config.headers as any).Authorization = `Bearer ${token}`;
+      config.headers.Authorization = `Bearer ${token}`;
     }
 
     return config;
@@ -30,15 +28,34 @@ client.interceptors.request.use(
 
 client.interceptors.response.use(
   (response) => {
+    // Normalize list-style responses so frontend code can safely call array helpers.
+    // If response.data is an array already, or contains one of the common wrappers,
+    // set response.data to the array. Otherwise leave response.data intact for
+    // single-resource responses such as { ok: true, data: { ... } }.
+
     try {
-      // Normalize many backend shapes into a safe array on response.data
-      const normalized = normalizeApiResponse(response.data);
-      response.data = normalized.data;
-    } catch (err) {
-      // If anything goes wrong, default to empty array to prevent .map crashes
-      response.data = [];
+      const body = response.data;
+
+      if (Array.isArray(body)) {
+        response.data = body;
+        return response;
+      }
+
+      const arrayKeys = ["data", "items", "orders", "riders", "results", "rows"];
+      for (const k of arrayKeys) {
+        if (body && Object.prototype.hasOwnProperty.call(body, k) && Array.isArray(body[k])) {
+          response.data = body[k];
+          return response;
+        }
+      }
+
+      // If the body has an "ok" flag and data is an object, keep original shape.
+      return response;
+    } catch (e) {
+      // If normalization fails, just return the original response so callers can
+      // handle it explicitly. We don't want normalization to throw.
+      return response;
     }
-    return response;
   },
   (error) => {
     const status = error.response?.status;
@@ -49,16 +66,31 @@ client.interceptors.response.use(
       localStorage.removeItem("user");
 
       if (!window.location.pathname.includes("/login")) {
-        // show a friendly message and redirect to login
-        message.error("Session expired. Please log in again.");
         window.location.replace("/login");
       }
-    } else if (status === 403) {
-      message.error("Access denied.");
-    } else if (status === 404) {
-      message.error("Requested resource not found.");
-    } else if (status >= 500) {
-      message.error("Server error. Please try again later.");
+    }
+
+    // If the backend has removed the merchants endpoints we treat GET 410 as
+    // an empty array response so UI list fetchers don't crash.
+    try {
+      const method = error.config?.method?.toLowerCase();
+      if (status === 410 && method === "get") {
+        return Promise.resolve({ data: [] });
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // For other expected statuses, attach a normalized error shape to make
+    // frontend handling easier without throwing raw axios errors.
+    if (status === 403 || status === 404 || status === 410 || status === 500) {
+      const message = error.response?.data?.message || error.response?.data?.error || error.message;
+      const normalized = {
+        status,
+        message,
+        raw: error.response?.data,
+      };
+      return Promise.reject(normalized);
     }
 
     return Promise.reject(error);

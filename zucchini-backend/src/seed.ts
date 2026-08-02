@@ -2,17 +2,7 @@ import { prisma } from "./lib/prisma";
 import { hashPassword } from "./utils/password";
 
 async function main() {
-  const merchant = await prisma.merchant.upsert({
-    where: { id: "zucchini-merchant" },
-    update: {},
-    create: {
-      id: "zucchini-merchant",
-      name: "Zucchini",
-      connector: "APP",
-      status: "CONNECTED",
-    },
-  });
-  console.log(`Merchant ready: ${merchant.name} (${merchant.id})`);
+  // Merchants have been removed from the platform; seed only users.
 
   const adminPhone = "0700000001";
   const adminPassword = "ChangeMe123!";

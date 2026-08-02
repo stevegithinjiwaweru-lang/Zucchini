@@ -70,9 +70,20 @@ client.interceptors.response.use(
       }
     }
 
+    // If the backend has removed the merchants endpoints we treat GET 410 as
+    // an empty array response so UI list fetchers don't crash.
+    try {
+      const method = error.config?.method?.toLowerCase();
+      if (status === 410 && method === "get") {
+        return Promise.resolve({ data: [] });
+      }
+    } catch (e) {
+      // ignore
+    }
+
     // For other expected statuses, attach a normalized error shape to make
     // frontend handling easier without throwing raw axios errors.
-    if (status === 403 || status === 404 || status === 500) {
+    if (status === 403 || status === 404 || status === 410 || status === 500) {
       const message = error.response?.data?.message || error.response?.data?.error || error.message;
       const normalized = {
         status,

@@ -1,5 +1,17 @@
 import { z } from "zod";
 
+// helper to coerce numeric-like values (strings) into numbers for lenient API intake
+const coerceNumber = (schema: z.ZodNumber) =>
+  z.preprocess((val) => {
+    if (typeof val === "string") {
+      const t = val.trim();
+      if (t === "") return undefined;
+      const n = Number(t);
+      return Number.isNaN(n) ? val : n;
+    }
+    return val;
+  }, schema);
+
 export const loginSchema = z.object({
   phone: z.string().min(6),
   password: z.string().min(4),
@@ -15,11 +27,11 @@ export const createOrderSchema = z.object({
   phone: z.string().min(6),
   address: z.string().min(1),
   destination: z.string().optional(),
-  pickupLat: z.number().optional(),
-  pickupLng: z.number().optional(),
-  destinationLat: z.number().optional(),
-  destinationLng: z.number().optional(),
-  amount: z.number().nonnegative().default(0),
+  pickupLat: coerceNumber(z.number().optional()),
+  pickupLng: coerceNumber(z.number().optional()),
+  destinationLat: coerceNumber(z.number().optional()),
+  destinationLng: coerceNumber(z.number().optional()),
+  amount: coerceNumber(z.number().nonnegative().default(0)),
   paymentType: z.enum(["COD", "PREPAID"]).default("COD"),
   scheduledAt: z.string().datetime().optional().nullable(),
   notes: z.string().optional(),
@@ -55,8 +67,8 @@ export const createRiderSchema = z.object({
 export const updateRiderSchema = createRiderSchema.partial();
 
 export const riderLocationSchema = z.object({
-  lat: z.number(),
-  lng: z.number(),
+  lat: coerceNumber(z.number()),
+  lng: coerceNumber(z.number()),
 });
 
 // Manual WhatsApp order entry — a dispatcher transcribes an order that came in

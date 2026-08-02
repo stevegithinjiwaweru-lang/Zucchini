@@ -114,12 +114,17 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
 
   if (merchant && merchant.id) orderData.merchantId = merchant.id;
 
-  const order = await prisma.order.create({
-    data: orderData,
-  });
+  try {
+    const order = await prisma.order.create({
+      data: orderData,
+    });
 
-  getIO()?.emit("order:created", order);
-  res.status(201).json({ ok: true, data: order, order });
+    getIO()?.emit("order:created", order);
+    res.status(201).json({ ok: true, data: order, order });
+  } catch (e: any) {
+    console.error("createOrder failed:", (e && e.message) || e, { orderData });
+    throw e;
+  }
 });
 
 // A dispatcher transcribes an order that arrived as a WhatsApp message from
@@ -163,10 +168,15 @@ export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: 
 
   if (merchant && merchant.id) orderData.merchantId = merchant.id;
 
-  const order = await prisma.order.create({ data: orderData });
+  try {
+    const order = await prisma.order.create({ data: orderData });
 
-  getIO()?.emit("order:created", order);
-  res.status(201).json({ ok: true, data: order });
+    getIO()?.emit("order:created", order);
+    res.status(201).json({ ok: true, data: order });
+  } catch (e: any) {
+    console.error("createWhatsappOrder failed:", (e && e.message) || e, { orderData });
+    throw e;
+  }
 });
 
 export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
@@ -180,7 +190,8 @@ export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response
     where: { id: req.params.id },
     data: { riderId, status: "ASSIGNED" },
     include: { rider: true },
-  }).catch(() => {
+  }).catch((e) => {
+    console.error("assignOrder failed:", (e && e.message) || e, { orderId: req.params.id, riderId });
     throw new ApiError(404, "Order not found");
   });
 
@@ -202,6 +213,9 @@ export const updateOrderStatus = asyncHandler(async (req: AuthedRequest, res: Re
       status,
       deliveredAt: status === "DELIVERED" ? new Date() : existing.deliveredAt,
     },
+  }).catch((e) => {
+    console.error("updateOrderStatus failed:", (e && e.message) || e, { orderId: req.params.id, status });
+    throw e;
   });
 
   // Free up the rider once a delivery reaches a terminal state.
@@ -289,12 +303,17 @@ export const uploadPod = asyncHandler(async (req: AuthedRequest, res: Response) 
   if (!file) throw new ApiError(400, "No file uploaded");
 
   const podUrl = `/uploads/pod/${file.filename}`;
-  const order = await prisma.order.update({
-    where: { id: req.params.id },
-    data: { podUrl },
-  }).catch(() => {
-    throw new ApiError(404, "Order not found");
-  });
+  try {
+    const order = await prisma.order.update({
+      where: { id: req.params.id },
+      data: { podUrl },
+    }).catch(() => {
+      throw new ApiError(404, "Order not found");
+    });
 
-  res.json({ ok: true, data: order });
+    res.json({ ok: true, data: order });
+  } catch (e: any) {
+    console.error("uploadPod failed:", (e && e.message) || e, { orderId: req.params.id, podUrl });
+    throw e;
+  }
 });

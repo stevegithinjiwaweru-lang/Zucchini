@@ -11,13 +11,11 @@ import { UPLOAD_ROOT } from "./utils/uploads";
 import authRoutes from "./routes/auth.routes";
 import orderRoutes from "./routes/orders.routes";
 import riderRoutes from "./routes/riders.routes";
-import merchantRoutes from "./routes/merchants.routes";
+// merchants routes removed — merchants are no longer served by the API
 import shopifyRoutes from "./routes/shopify.routes";
 import dispatchRoutes from "./routes/dispatch.routes";
 
-
 const app = express();
-
 
 // Security + logging
 app.use(helmet());
@@ -31,7 +29,6 @@ app.use(
 
 app.use(morgan("dev"));
 
-
 // Shopify webhooks
 // Keep before express.json() because HMAC verification needs raw body
 app.use(
@@ -41,7 +38,6 @@ app.use(
   }),
   shopifyRoutes
 );
-
 
 // Body parsing
 app.use(
@@ -56,13 +52,8 @@ app.use(
   })
 );
 
-
 // Static uploads
-app.use(
-  "/uploads",
-  express.static(UPLOAD_ROOT)
-);
-
+app.use("/uploads", express.static(UPLOAD_ROOT));
 
 // Health check
 app.get(
@@ -75,18 +66,18 @@ app.get(
   }
 );
 
-
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/riders", riderRoutes);
-app.use("/api/merchants", merchantRoutes);
+// Merchant API is removed — respond with 410 Gone for legacy clients
+app.use("/api/merchants", (_req, res) => res.status(410).json({ ok: false, message: "Merchants API removed" }));
+// Customer API (if any legacy paths) respond with 410 Gone
+app.use("/api/customers", (_req, res) => res.status(410).json({ ok: false, message: "Customers API removed" }));
 app.use("/api/dispatches", dispatchRoutes);
-
 
 // Error handling
 app.use(notFoundHandler);
 app.use(errorHandler);
-
 
 export default app;

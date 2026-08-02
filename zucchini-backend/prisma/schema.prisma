@@ -96,24 +96,13 @@ model Rider {
   updatedAt        DateTime    @updatedAt
 }
 
-model Merchant {
-  id                    String         @id @default(cuid())
-  name                  String
-  connector             Connector      @default(APP)
-  status                MerchantStatus @default(DISCONNECTED)
-  shopifyShopDomain     String?        @unique
-  shopifyAccessTokenEnc String?
-  shopifyWebhookSecret  String?
-  lastSyncAt            DateTime?
-  orders                Order[]
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-}
+// Merchant model removed as part of cleanup. Orders will keep an optional
+// merchantId string to preserve any historical reference, but there is no
+// relation to a Merchant model.
 
 model Order {
   id             String      @id @default(cuid())
-  merchantId     String
-  merchant       Merchant    @relation(fields: [merchantId], references: [id])
+  merchantId     String?
   customerName   String
   phone          String
   address        String

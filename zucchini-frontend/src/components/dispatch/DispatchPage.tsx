@@ -10,8 +10,8 @@ import { fetchPendingDispatchOrders } from "../../services/dispatch.service";
 import { getSocket } from "../../services/socket";
 
 import StatusTag from "../common/StatusTag";
+import { ensureArray } from "../../utils/normalize";
 import "./dispatch.css";
-
 
 const DispatchPage: React.FC = () => {
   const queryClient = useQueryClient();
@@ -27,23 +27,22 @@ const DispatchPage: React.FC = () => {
   const [assignTargetOrder, setAssignTargetOrder] = useState<string | null>(null);
   const [createOrderOpen, setCreateOrderOpen] = useState(false);
 
-
   const {
     data = [],
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["dispatchOrders"],
-    queryFn: fetchPendingDispatchOrders,
+    queryKey: ["dispatchOrders", filters],
+    queryFn: () => fetchPendingDispatchOrders(filters),
     keepPreviousData: true,
+    initialData: [],
+    select: (d) => ensureArray(d),
   });
-
 
   useEffect(() => {
     const socket = getSocket();
 
     if (!socket) return;
-
 
     const refreshDispatch = () => {
       queryClient.invalidateQueries({
@@ -55,49 +54,18 @@ const DispatchPage: React.FC = () => {
       });
     };
 
-
     socket.on("order:assigned", refreshDispatch);
     socket.on("order:unassigned", refreshDispatch);
     socket.on("order:status:update", refreshDispatch);
-
 
     return () => {
       socket.off("order:assigned", refreshDispatch);
       socket.off("order:unassigned", refreshDispatch);
       socket.off("order:status:update", refreshDispatch);
     };
-
   }, [queryClient]);
 
-
-
-  const orders = useMemo(() => {
-
-    if (Array.isArray(data)) {
-      return data;
-    }
-
-
-    if (
-      data &&
-      typeof data === "object" &&
-      Array.isArray((data as any).items)
-    ) {
-      return (data as any).items;
-    }
-
-
-    console.error(
-      "Dispatch API returned invalid data:",
-      data
-    );
-
-
-    return [];
-
-  }, [data]);
-
-
+  const orders = useMemo(() => ensureArray(data), [data]);
 
   const columns = [
     {
@@ -106,84 +74,63 @@ const DispatchPage: React.FC = () => {
       key: "id",
       render: (id: string) =>
         id ? (
-          <a href={`/orders/${id}`}>
-            {id.slice(0, 8).toUpperCase()}
-          </a>
-        ) : "-",
+          <a href={`/orders/${id}`}>{id.slice(0, 8).toUpperCase()}</a>
+        ) : (
+          "-"
+        ),
       width: 150,
     },
-
     {
       title: "Customer",
       dataIndex: "customerName",
       key: "customerName",
     },
-
     {
       title: "Pickup",
       dataIndex: "address",
       key: "pickup",
     },
-
     {
       title: "Destination",
       dataIndex: "destination",
       key: "destination",
     },
-
     {
       title: "Distance",
       dataIndex: "distance",
       key: "distance",
-      render: (distance: number) =>
-        distance ? `${distance} km` : "—",
+      render: (distance: number) => (distance ? `${distance} km` : "—"),
     },
-
     {
       title: "Scheduled",
       dataIndex: "scheduledAt",
       key: "scheduledAt",
-      render: (date: string) =>
-        date
-          ? new Date(date).toLocaleString()
-          : "—",
+      render: (date: string) => (date ? new Date(date).toLocaleString() : "—"),
     },
-
     {
       title: "Created",
       dataIndex: "createdAt",
       key: "createdAt",
-      render: (date: string) =>
-        date
-          ? new Date(date).toLocaleString()
-          : "—",
+      render: (date: string) => (date ? new Date(date).toLocaleString() : "—"),
     },
-
     {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      render: (status: string) =>
-        <StatusTag status={status} />,
+      render: (status: string) => <StatusTag status={status} />,
     },
-
     {
       title: "Actions",
       key: "actions",
       width: 220,
-
       render: (_: any, record: any) => (
         <div style={{ display: "flex", gap: 8 }}>
-
           <Button
             size="small"
-            onClick={() =>
-              window.location.assign(`/orders/${record.id}`)
-            }
+            onClick={() => window.location.assign(`/orders/${record.id}`)}
           >
             View
           </Button>
-
 
           <Button
             size="small"
@@ -195,49 +142,29 @@ const DispatchPage: React.FC = () => {
           >
             Assign Rider
           </Button>
-
         </div>
       ),
     },
   ];
 
-
-
   const rowSelection = {
-
     selectedRowKeys,
-
-    onChange: (keys: React.Key[]) =>
-      setSelectedRowKeys(keys as string[]),
-
+    onChange: (keys: React.Key[]) => setSelectedRowKeys(keys as string[]),
   };
 
-
-
   const handleBulkAssign = () => {
-
     if (!selectedRowKeys.length) {
       message.info("Select orders to assign");
       return;
     }
-
     setAssignModalOpen(true);
-
   };
 
-
-
   return (
-
     <div className="dispatch-page">
-
-
       <Row gutter={12} style={{ marginBottom: 12 }}>
-
-
         <Col span={16}>
           <Card>
-
             <DispatchFilters
               filters={filters}
               onChange={(patch: any) =>
@@ -247,153 +174,62 @@ const DispatchPage: React.FC = () => {
                 }))
               }
             />
-
           </Card>
         </Col>
-
-
 
         <Col span={8}>
-
           <Card>
-
             <DispatchToolbar
-
               selectedCount={selectedRowKeys.length}
-
               onBulkAssign={handleBulkAssign}
-
               onRefresh={() => refetch()}
-
-              onCreateOrder={() =>
-                setCreateOrderOpen(true)
-              }
-
+              onCreateOrder={() => setCreateOrderOpen(true)}
             />
-
           </Card>
-
         </Col>
-
-
       </Row>
 
-
-
       <Card>
+        {isLoading ? (
+          <div style={{ textAlign: "center", padding: 40 }}>
+            <Spin />
+          </div>
+        ) : (
+          <Table
+            rowKey="id"
+            dataSource={orders}
+            columns={columns}
+            rowSelection={rowSelection}
+            pagination={{
+              current: filters.page,
+              pageSize: filters.limit,
+            }}
+            scroll={{ x: 1200 }}
+          />
+        )}
 
-
-        {
-          isLoading ? (
-
-            <div
-              style={{
-                textAlign: "center",
-                padding: 40,
-              }}
-            >
-              <Spin />
-            </div>
-
-
-          ) : (
-
-
-            <Table
-
-              rowKey="id"
-
-              dataSource={orders}
-
-              columns={columns}
-
-              rowSelection={rowSelection}
-
-              pagination={{
-                current: filters.page,
-                pageSize: filters.limit,
-              }}
-
-              scroll={{
-                x: 1200,
-              }}
-
-            />
-
-
-          )
-        }
-
-
-
-        {
-          orders.length === 0 &&
-          !isLoading &&
-          (
-            <Empty description="No pending dispatch orders" />
-          )
-        }
-
-
+        {orders.length === 0 && !isLoading && <Empty description="No pending dispatch orders" />}
       </Card>
 
-
-
-
       <AssignRiderModal
-
         open={assignModalOpen}
-
         orderId={assignTargetOrder}
-
         selectedOrderIds={selectedRowKeys}
-
         onClose={() => {
-
           setAssignModalOpen(false);
           setAssignTargetOrder(null);
           setSelectedRowKeys([]);
-
         }}
-
-
         onAssigned={() => {
-
-          queryClient.invalidateQueries({
-            queryKey: ["dispatchOrders"],
-          });
-
-
-          queryClient.invalidateQueries({
-            queryKey: ["orders"],
-          });
-
-
-          message.success(
-            "Assignment complete"
-          );
-
+          queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
+          queryClient.invalidateQueries({ queryKey: ["orders"] });
+          message.success("Assignment complete");
         }}
-
       />
 
-
-
-      <CreateOrderModal
-
-        open={createOrderOpen}
-
-        onClose={() =>
-          setCreateOrderOpen(false)
-        }
-
-      />
-
-
+      <CreateOrderModal open={createOrderOpen} onClose={() => setCreateOrderOpen(false)} />
     </div>
-
   );
 };
-
 
 export default DispatchPage;

@@ -32,7 +32,7 @@ export type PaymentType = "COD" | "PREPAID";
 
 export type Order = {
   id: string;
-  merchantId: string;
+  merchantId?: string | null; // made optional to match backend changes
   merchant?: Merchant;
   customerName: string;
   phone: string;

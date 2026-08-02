@@ -1,8 +1,8 @@
 import { Response } from "express";
-import { asyncHandler, ApiError } from "../utils/asyncHandler";
+import { asyncHandler } from "../utils/asyncHandler";
 
-// Merchants endpoints have been removed. These handlers exist only to
-// provide explicit 410 responses if they are invoked directly.
+// Merchants endpoints have been removed. Return 410 Gone for all merchant
+// management requests so clients receive a clear response instead of a crash.
 
 export const listMerchants = asyncHandler(async (_req: any, res: Response) => {
   res.status(410).json({ ok: false, message: "Merchants API removed" });

@@ -39,6 +39,13 @@ async function getOrCreateDefaultMerchant() {
   }
 }
 
+function generateExternalId() {
+  // Format: CMS + base36 timestamp + 4-digit random
+  const ts = Date.now().toString(36).toUpperCase().slice(-6);
+  const rnd = Math.floor(Math.random() * 9000) + 1000; // 1000-9999
+  return `CMS${ts}${rnd}`;
+}
+
 export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { status, riderId, merchantId, source } = req.query as Record<string, string>;
   const limit = Math.min(parseInt(String(req.query.limit || "50"), 10) || 50, 200);
@@ -125,28 +132,43 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
     source: "MANUAL",
   };
 
-  // persist provided external/order number (if any)
-  if (body.externalId) orderData.externalId = body.externalId;
-
   if (merchant && merchant.id) orderData.merchantId = merchant.id;
 
-  try {
-    const order = await prisma.order.create({
-      data: orderData,
-    });
-
-    getIO()?.emit("order:created", order);
-    res.status(201).json({ ok: true, data: order, order });
-  } catch (e: any) {
-    // If the unique constraint kicks in for externalId (race), convert to 409
-    if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
-      // Prisma unique constraint error code P2002
-      throw new ApiError(409, "An order with that order number already exists");
+  // Try to persist the order, generating a unique externalId server-side when
+  // the caller did not provide one. This avoids race conditions and guarantees
+  // uniqueness even under concurrent manual creations.
+  const maxAttempts = 5;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (body.externalId) {
+      orderData.externalId = body.externalId;
+    } else {
+      orderData.externalId = generateExternalId();
     }
 
-    console.error("createOrder failed:", (e && e.message) || e, { orderData });
-    throw e;
+    try {
+      const order = await prisma.order.create({ data: orderData });
+
+      getIO()?.emit("order:created", order);
+      res.status(201).json({ ok: true, data: order, order });
+      return;
+    } catch (e: any) {
+      // If the unique constraint kicks in for externalId (race), convert to 409
+      if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
+        if (body.externalId) {
+          // Caller provided a duplicate externalId — surface conflict
+          throw new ApiError(409, "An order with that order number already exists");
+        }
+        // Otherwise generate a new candidate and retry
+        continue;
+      }
+
+      console.error("createOrder failed:", (e && e.message) || e, { orderData });
+      throw e;
+    }
   }
+
+  // Exhausted attempts
+  throw new ApiError(500, "Failed to generate a unique order number, please try again");
 });
 
 // A dispatcher transcribes an order that arrived as a WhatsApp message from
@@ -194,15 +216,35 @@ export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: 
 
   if (merchant && merchant.id) orderData.merchantId = merchant.id;
 
-  try {
-    const order = await prisma.order.create({ data: orderData });
+  // Ensure externalId exists and is unique — generate server-side when missing
+  const maxAttempts = 5;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (body.externalId) {
+      orderData.externalId = body.externalId;
+    } else {
+      orderData.externalId = generateExternalId();
+    }
 
-    getIO()?.emit("order:created", order);
-    res.status(201).json({ ok: true, data: order });
-  } catch (e: any) {
-    console.error("createWhatsappOrder failed:", (e && e.message) || e, { orderData });
-    throw e;
+    try {
+      const order = await prisma.order.create({ data: orderData });
+
+      getIO()?.emit("order:created", order);
+      res.status(201).json({ ok: true, data: order });
+      return;
+    } catch (e: any) {
+      if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
+        if (body.externalId) {
+          throw new ApiError(409, "An order with that order number already exists");
+        }
+        continue;
+      }
+
+      console.error("createWhatsappOrder failed:", (e && e.message) || e, { orderData });
+      throw e;
+    }
   }
+
+  throw new ApiError(500, "Failed to generate a unique order number, please try again");
 });
 
 export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {

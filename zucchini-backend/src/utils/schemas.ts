@@ -31,6 +31,9 @@ export const createOrderSchema = z.object({
   pickupLng: coerceNumber(z.number().optional()),
   destinationLat: coerceNumber(z.number().optional()),
   destinationLng: coerceNumber(z.number().optional()),
+  // Accept flat lat/lng as aliases (frontend sometimes sends lat/lng)
+  lat: coerceNumber(z.number().optional()),
+  lng: coerceNumber(z.number().optional()),
   amount: coerceNumber(z.number().nonnegative().default(0)),
   paymentType: z.enum(["COD", "PREPAID"]).default("COD"),
   scheduledAt: z.string().datetime().optional().nullable(),

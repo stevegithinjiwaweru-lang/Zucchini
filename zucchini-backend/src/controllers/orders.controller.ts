@@ -82,6 +82,15 @@ export const getOrder = asyncHandler(async (req: AuthedRequest, res: Response) =
 export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = createOrderSchema.parse(req.body);
 
+  // If caller provided an external/order number, ensure it's not already used
+  if (body.externalId) {
+    const already = await prisma.order.findUnique({ where: { externalId: body.externalId } });
+    if (already) {
+      // 409 Conflict - caller should choose a different order number
+      throw new ApiError(409, "An order with that order number already exists");
+    }
+  }
+
   let merchant: any = undefined;
   try {
     merchant = body.merchantId
@@ -116,6 +125,9 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
     source: "MANUAL",
   };
 
+  // persist provided external/order number (if any)
+  if (body.externalId) orderData.externalId = body.externalId;
+
   if (merchant && merchant.id) orderData.merchantId = merchant.id;
 
   try {
@@ -126,6 +138,12 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
     getIO()?.emit("order:created", order);
     res.status(201).json({ ok: true, data: order, order });
   } catch (e: any) {
+    // If the unique constraint kicks in for externalId (race), convert to 409
+    if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
+      // Prisma unique constraint error code P2002
+      throw new ApiError(409, "An order with that order number already exists");
+    }
+
     console.error("createOrder failed:", (e && e.message) || e, { orderData });
     throw e;
   }

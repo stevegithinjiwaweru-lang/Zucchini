@@ -57,8 +57,11 @@ router.patch("/:id/status", requireRole("ADMIN", "DISPATCHER", "RIDER"), updateO
 
 /**
  * Bulk CSV upload (multipart form-data: file + merchantId)
+ * Support both /upload-csv and /bulk-csv endpoints because the frontend contains
+ * references to both names in different places (legacy vs endpoints.ts).
  */
 router.post("/upload-csv", requireRole("ADMIN", "DISPATCHER"), csvUpload.single("file"), bulkUploadCsv);
+router.post("/bulk-csv", requireRole("ADMIN", "DISPATCHER"), csvUpload.single("file"), bulkUploadCsv);
 
 /**
  * Upload proof-of-delivery (image)

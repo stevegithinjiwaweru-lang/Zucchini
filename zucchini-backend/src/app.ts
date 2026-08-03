@@ -2,10 +2,15 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import cookieParser from "cookie-parser";
 
 import { env } from "./config/env";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { UPLOAD_ROOT } from "./utils/uploads";
+
+// Middleware
+import requestId from "./middleware/requestId";
+import logger from "./utils/logger";
 
 // Routes
 import authRoutes from "./routes/auth.routes";
@@ -27,6 +32,13 @@ app.use(
   })
 );
 
+// Attach a request id for correlated logs
+app.use(requestId());
+
+// Parse cookies
+app.use(cookieParser());
+
+// Use morgan for access logs (still enabled) — could route to logger if desired
 app.use(morgan("dev"));
 
 // Shopify webhooks

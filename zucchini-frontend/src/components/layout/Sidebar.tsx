@@ -1,17 +1,18 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
+import sidebarLogo from "../../assets/easybox-logo.svg";
 
 const Sidebar: React.FC = () => {
   return (
     <aside className="sidebar" role="navigation" aria-label="Main navigation">
       <div>
         <div className="brand">
-          <img src="/logo192.png" alt="Zucchini logo" />
+          <img src={sidebarLogo} alt="Easybox logo" />
           <div className="title">Zucchini</div>
         </div>
 
         <nav className="nav" aria-label="Primary">
-          <NavLink to="/dashboard" className={({ isActive }) => (isActive ? "active" : "")}>
+          <NavLink to="/dashboard" className={({ isActive }) => (isActive ? "active" : "")}> 
             Dashboard
           </NavLink>
           <NavLink to="/orders" className={({ isActive }) => (isActive ? "active" : "")}>Orders</NavLink>

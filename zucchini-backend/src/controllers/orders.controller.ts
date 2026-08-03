@@ -39,13 +39,6 @@ async function getOrCreateDefaultMerchant() {
   }
 }
 
-function generateExternalId() {
-  // Format: CMS + base36 timestamp + 4-digit random
-  const ts = Date.now().toString(36).toUpperCase().slice(-6);
-  const rnd = Math.floor(Math.random() * 9000) + 1000; // 1000-9999
-  return `CMS${ts}${rnd}`;
-}
-
 export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { status, riderId, merchantId, source } = req.query as Record<string, string>;
   const limit = Math.min(parseInt(String(req.query.limit || "50"), 10) || 50, 200);
@@ -89,13 +82,18 @@ export const getOrder = asyncHandler(async (req: AuthedRequest, res: Response) =
 export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = createOrderSchema.parse(req.body);
 
+  // externalId MUST be provided by the caller for manual orders. We don't
+  // generate server-side order numbers to avoid surprises — dispatchers and
+  // WhatsApp importers must provide their own unique order numbers.
+  if (!body.externalId) {
+    throw new ApiError(400, "externalId (order number) is required for manual orders");
+  }
+
   // If caller provided an external/order number, ensure it's not already used
-  if (body.externalId) {
-    const already = await prisma.order.findUnique({ where: { externalId: body.externalId } });
-    if (already) {
-      // 409 Conflict - caller should choose a different order number
-      throw new ApiError(409, "An order with that order number already exists");
-    }
+  const already = await prisma.order.findUnique({ where: { externalId: body.externalId } });
+  if (already) {
+    // 409 Conflict - caller should choose a different order number
+    throw new ApiError(409, "An order with that order number already exists");
   }
 
   let merchant: any = undefined;
@@ -130,45 +128,24 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
     notes: body.notes,
     status: "NEW",
     source: "MANUAL",
+    externalId: body.externalId,
   };
 
   if (merchant && merchant.id) orderData.merchantId = merchant.id;
 
-  // Try to persist the order, generating a unique externalId server-side when
-  // the caller did not provide one. This avoids race conditions and guarantees
-  // uniqueness even under concurrent manual creations.
-  const maxAttempts = 5;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (body.externalId) {
-      orderData.externalId = body.externalId;
-    } else {
-      orderData.externalId = generateExternalId();
+  try {
+    const order = await prisma.order.create({ data: orderData });
+
+    getIO()?.emit("order:created", order);
+    res.status(201).json({ ok: true, data: order, order });
+  } catch (e: any) {
+    if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
+      throw new ApiError(409, "An order with that order number already exists");
     }
 
-    try {
-      const order = await prisma.order.create({ data: orderData });
-
-      getIO()?.emit("order:created", order);
-      res.status(201).json({ ok: true, data: order, order });
-      return;
-    } catch (e: any) {
-      // If the unique constraint kicks in for externalId (race), convert to 409
-      if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
-        if (body.externalId) {
-          // Caller provided a duplicate externalId — surface conflict
-          throw new ApiError(409, "An order with that order number already exists");
-        }
-        // Otherwise generate a new candidate and retry
-        continue;
-      }
-
-      console.error("createOrder failed:", (e && e.message) || e, { orderData });
-      throw e;
-    }
+    console.error("createOrder failed:", (e && e.message) || e, { orderData });
+    throw e;
   }
-
-  // Exhausted attempts
-  throw new ApiError(500, "Failed to generate a unique order number, please try again");
 });
 
 // A dispatcher transcribes an order that arrived as a WhatsApp message from
@@ -176,6 +153,11 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
 // can break down order volume by channel (Shopify vs WhatsApp vs manual).
 export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = whatsappOrderSchema.parse(req.body);
+
+  // WhatsApp orders must include an externalId provided by the dispatcher
+  if (!body.externalId) {
+    throw new ApiError(400, "externalId (order number) is required for WhatsApp orders");
+  }
 
   let merchant: any = undefined;
   try {
@@ -212,39 +194,24 @@ export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: 
     notes: noteParts.join(" | ") || undefined,
     status: "NEW",
     source: "WHATSAPP",
+    externalId: body.externalId,
   };
 
   if (merchant && merchant.id) orderData.merchantId = merchant.id;
 
-  // Ensure externalId exists and is unique — generate server-side when missing
-  const maxAttempts = 5;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (body.externalId) {
-      orderData.externalId = body.externalId;
-    } else {
-      orderData.externalId = generateExternalId();
+  try {
+    const order = await prisma.order.create({ data: orderData });
+
+    getIO()?.emit("order:created", order);
+    res.status(201).json({ ok: true, data: order });
+  } catch (e: any) {
+    if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
+      throw new ApiError(409, "An order with that order number already exists");
     }
 
-    try {
-      const order = await prisma.order.create({ data: orderData });
-
-      getIO()?.emit("order:created", order);
-      res.status(201).json({ ok: true, data: order });
-      return;
-    } catch (e: any) {
-      if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
-        if (body.externalId) {
-          throw new ApiError(409, "An order with that order number already exists");
-        }
-        continue;
-      }
-
-      console.error("createWhatsappOrder failed:", (e && e.message) || e, { orderData });
-      throw e;
-    }
+    console.error("createWhatsappOrder failed:", (e && e.message) || e, { orderData });
+    throw e;
   }
-
-  throw new ApiError(500, "Failed to generate a unique order number, please try again");
 });
 
 export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
@@ -302,42 +269,7 @@ export const unassignOrder = asyncHandler(async (req: AuthedRequest, res: Respon
   res.json({ ok: true, data: order });
 });
 
-export const updateOrderStatus = asyncHandler(async (req: AuthedRequest, res: Response) => {
-  const { status } = updateOrderStatusSchema.parse(req.body);
-
-  const existing = await prisma.order.findUnique({ where: { id: req.params.id } });
-  if (!existing) throw new ApiError(404, "Order not found");
-
-  const order = await prisma.order.update({
-    where: { id: req.params.id },
-    data: {
-      status,
-      deliveredAt: status === "DELIVERED" ? new Date() : existing.deliveredAt,
-    },
-  }).catch((e) => {
-    console.error("updateOrderStatus failed:", (e && e.message) || e, { orderId: req.params.id, status });
-    throw e;
-  });
-
-  // Free up the rider once a delivery reaches a terminal state.
-  if (["DELIVERED", "FAILED", "RETURNED"].includes(status) && existing.riderId) {
-    const stillBusy = await prisma.order.count({
-      where: { riderId: existing.riderId, status: { in: ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"] } },
-    });
-    if (stillBusy === 0) {
-      await prisma.rider.update({ where: { id: existing.riderId }, data: { status: "AVAILABLE" } });
-    }
-  }
-
-  getIO()?.emit("order:updated", order);
-  res.json({ ok: true, data: order });
-});
-
-// Bulk order import from a CSV — this is how dispatchers batch-enter orders
-// that came in as WhatsApp messages from Zucchini (they keep a running sheet
-// during the day, then upload it). Expected columns (case-insensitive,
-// order-independent): customerName, phone, address, amount, paymentType,
-// destination, lat, lng. Every imported row is tagged source=WHATSAPP.
+// update bulkUploadCsv to require externalId per row for WhatsApp CSVs
 export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const file = (req as any).file as Express.Multer.File | undefined;
   if (!file) throw new ApiError(400, "No CSV file uploaded");
@@ -364,6 +296,19 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
       if (!row.customername || !row.phone || !row.address) {
         throw new Error("customerName, phone, and address are required");
       }
+
+      // require externalId for WhatsApp CSV imports (row.externalid case-insensitive)
+      const externalId = row.externalid || row.externalId || row.orderid || row.orderid?.toString();
+      if (!externalId) {
+        throw new Error("externalId (order number) is required in CSV for WhatsApp orders");
+      }
+
+      // ensure uniqueness
+      const exists = await prisma.order.findUnique({ where: { externalId: String(externalId) } });
+      if (exists) {
+        throw new Error(`Order number ${externalId} already exists`);
+      }
+
       await prisma.order.create({
         data: {
           merchantId: merchant?.id ?? undefined,
@@ -379,6 +324,7 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
           pickupLng: row.lng ? parseFloat(row.lng) : undefined,
           status: "NEW",
           source: "WHATSAPP",
+          externalId: String(externalId),
         },
       });
       imported++;

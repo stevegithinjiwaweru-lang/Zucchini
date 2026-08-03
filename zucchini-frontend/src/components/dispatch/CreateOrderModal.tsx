@@ -48,8 +48,13 @@ const CreateOrderModal: React.FC<{ open: boolean; onClose: () => void }> = ({ op
         externalId: values.externalId ? String(values.externalId).trim() : undefined,
       };
 
-      await createOrder(payload);
-      message.success("Order created");
+      const created = await createOrder(payload);
+      const order = created?.data ?? created;
+
+      message.success(
+        `Order created${order?.externalId ? ` — order number: ${order.externalId}` : ""}`
+      );
+
       qc.invalidateQueries(["dispatchOrders"]);
       qc.invalidateQueries(["orders"]);
       onClose();
@@ -88,11 +93,15 @@ const CreateOrderModal: React.FC<{ open: boolean; onClose: () => void }> = ({ op
           </Col>
         </Row>
 
-        {/* New: Order number (optional) */}
+        {/* Order number (required for manual/WhatsApp) */}
         <Row gutter={12}>
           <Col span={12}>
-            <Form.Item name="externalId" label="Order number (optional)">
-              <Input placeholder="e.g. INV-1002 or your reference number" />
+            <Form.Item
+              name="externalId"
+              label="Order number"
+              rules={[{ required: true, message: "Please enter an order number" }]}
+            >
+              <Input placeholder="e.g. CMSDDC42 or your reference number" />
             </Form.Item>
           </Col>
         </Row>

@@ -6,7 +6,15 @@ import {
   getMyOrders,
   getOrder,
   createOrder,
+  createWhatsappOrder,
+  assignOrder,
+  unassignOrder,
+  updateOrderStatus,
+  bulkUploadCsv,
+  uploadPod,
 } from "../controllers/orders.controller";
+
+import { csvUpload, podUpload } from "../utils/uploads";
 
 const router = Router();
 
@@ -27,18 +35,39 @@ router.get("/", listOrders);
 router.get("/mine", getMyOrders);
 
 /**
+ * Create orders manually
+ */
+router.post("/", requireRole("ADMIN", "DISPATCHER"), createOrder);
+
+/**
+ * Manual WhatsApp order entry (single)
+ */
+router.post("/whatsapp", requireRole("ADMIN", "DISPATCHER"), createWhatsappOrder);
+
+/**
+ * Assign / unassign order to rider
+ */
+router.post("/:id/assign", requireRole("ADMIN", "DISPATCHER"), assignOrder);
+router.post("/:id/unassign", requireRole("ADMIN", "DISPATCHER"), unassignOrder);
+
+/**
+ * Update order status
+ */
+router.patch("/:id/status", requireRole("ADMIN", "DISPATCHER", "RIDER"), updateOrderStatus);
+
+/**
+ * Bulk CSV upload (multipart form-data: file + merchantId)
+ */
+router.post("/upload-csv", requireRole("ADMIN", "DISPATCHER"), csvUpload.single("file"), bulkUploadCsv);
+
+/**
+ * Upload proof-of-delivery (image)
+ */
+router.post("/:id/pod", requireRole("ADMIN", "DISPATCHER", "RIDER"), podUpload.single("file"), uploadPod);
+
+/**
  * Get single order details
  */
 router.get("/:id", getOrder);
-
-
-/**
- * Create orders manually
- */
-router.post(
-  "/",
-  requireRole("ADMIN", "DISPATCHER"),
-  createOrder
-);
 
 export default router;

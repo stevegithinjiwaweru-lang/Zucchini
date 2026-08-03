@@ -45,6 +45,7 @@ const CreateOrderModal: React.FC<{ open: boolean; onClose: () => void }> = ({ op
         paymentType: values.paymentType || "COD",
         scheduledAt: values.scheduledAt ? values.scheduledAt.toISOString() : null,
         notes: values.notes,
+        externalId: values.externalId ? String(values.externalId).trim() : undefined,
       };
 
       await createOrder(payload);
@@ -54,6 +55,7 @@ const CreateOrderModal: React.FC<{ open: boolean; onClose: () => void }> = ({ op
       onClose();
       reset();
     } catch (err: any) {
+      // server returns 409 with message when externalId duplicates — this will be shown to the user
       message.error(err?.response?.data?.error || err?.message || "Failed to create order");
     } finally {
       setSubmitting(false);
@@ -82,6 +84,15 @@ const CreateOrderModal: React.FC<{ open: boolean; onClose: () => void }> = ({ op
           <Col span={12}>
             <Form.Item name="phone" label="Phone" rules={[{ required: true }]}>
               <Input />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        {/* New: Order number (optional) */}
+        <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item name="externalId" label="Order number (optional)">
+              <Input placeholder="e.g. INV-1002 or your reference number" />
             </Form.Item>
           </Col>
         </Row>

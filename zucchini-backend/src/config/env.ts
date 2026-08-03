@@ -21,4 +21,10 @@ export const env = {
     "0000000000000000000000000000000000000000000000000000000000000000"
   ),
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
+
+  // Shopify OAuth / App configuration (optional in environments that don't use Shopify)
+  shopifyClientId: process.env.SHOPIFY_CLIENT_ID || "",
+  shopifyClientSecret: process.env.SHOPIFY_CLIENT_SECRET || "",
+  shopifyAppUrl: process.env.SHOPIFY_APP_URL || "",
+  shopifyRedirectUri: process.env.SHOPIFY_REDIRECT_URI || "",
 };

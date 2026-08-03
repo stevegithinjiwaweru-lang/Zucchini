@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 // helper to coerce numeric-like values (strings) into numbers for lenient API intake
-const coerceNumber = (schema: z.ZodNumber) =>
+// Accept any Zod schema (number, optional, defaulted, etc.) so callers can pass
+// z.number(), z.number().optional(), or z.number().nonnegative().default(0).
+const coerceNumber = (schema: z.ZodTypeAny) =>
   z.preprocess((val) => {
     if (typeof val === "string") {
       const t = val.trim();

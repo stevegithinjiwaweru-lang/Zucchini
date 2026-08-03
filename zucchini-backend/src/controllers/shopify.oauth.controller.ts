@@ -1,7 +1,6 @@
 // zucchini-backend/src/controllers/shopify.oauth.controller.ts
 import { Request, Response } from "express";
 import crypto from "crypto";
-import fetch from "node-fetch";
 import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { asyncHandler, ApiError } from "../utils/asyncHandler";

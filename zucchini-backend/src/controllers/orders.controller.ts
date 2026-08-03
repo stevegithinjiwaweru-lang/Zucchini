@@ -93,17 +93,21 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
     merchant = undefined;
   }
 
+  // Normalize aliases: frontend sometimes sends lat/lng instead of pickupLat/pickupLng
+  const pickupLatVal = body.pickupLat ?? body.lat ?? undefined;
+  const pickupLngVal = body.pickupLng ?? body.lng ?? undefined;
+
   const orderData: any = {
     customerName: body.customerName,
     phone: body.phone,
     address: body.address,
     destination: body.destination,
-    pickupLat: body.pickupLat,
-    pickupLng: body.pickupLng,
+    pickupLat: pickupLatVal,
+    pickupLng: pickupLngVal,
     destinationLat: body.destinationLat,
     destinationLng: body.destinationLng,
-    lat: body.pickupLat,
-    lng: body.pickupLng,
+    lat: pickupLatVal,
+    lng: pickupLngVal,
     amount: body.amount,
     paymentType: body.paymentType,
     scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
@@ -147,17 +151,21 @@ export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: 
     body.waMessageExcerpt ? `Message: "${body.waMessageExcerpt.slice(0, 300)}"` : null]
     .filter(Boolean);
 
+  // Normalize aliases: accept lat/lng as pickup coords
+  const pickupLatVal = body.pickupLat ?? body.lat ?? undefined;
+  const pickupLngVal = body.pickupLng ?? body.lng ?? undefined;
+
   const orderData: any = {
     customerName: body.customerName,
     phone: body.phone,
     address: body.address,
     destination: body.destination,
-    pickupLat: body.pickupLat,
-    pickupLng: body.pickupLng,
+    pickupLat: pickupLatVal,
+    pickupLng: pickupLngVal,
     destinationLat: body.destinationLat,
     destinationLng: body.destinationLng,
-    lat: body.pickupLat,
-    lng: body.pickupLng,
+    lat: pickupLatVal,
+    lng: pickupLngVal,
     amount: body.amount,
     paymentType: body.paymentType,
     scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
@@ -198,6 +206,39 @@ export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response
   await prisma.rider.update({ where: { id: riderId }, data: { status: "BUSY" } });
 
   getIO()?.emit("order:updated", order);
+  res.json({ ok: true, data: order });
+});
+
+// Unassign rider from order (used by frontend RemoveRiderDialog)
+export const unassignOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const orderId = req.params.id;
+  const existing = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!existing) throw new ApiError(404, "Order not found");
+
+  const prevRiderId = existing.riderId;
+
+  const order = await prisma.order.update({
+    where: { id: orderId },
+    data: { riderId: null, status: "NEW" },
+  }).catch(() => {
+    throw new ApiError(404, "Order not found");
+  });
+
+  // Free previous rider if no longer has active orders
+  if (prevRiderId) {
+    const stillBusy = await prisma.order.count({
+      where: { riderId: prevRiderId, status: { in: ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"] } },
+    });
+    if (stillBusy === 0) {
+      await prisma.rider.update({ where: { id: prevRiderId }, data: { status: "AVAILABLE" } }).catch(() => {
+        console.warn("Failed to update rider status after unassign", prevRiderId);
+      });
+    }
+  }
+
+  getIO()?.emit("order:updated", order);
+  getIO()?.emit("order:unassigned", order);
+
   res.json({ ok: true, data: order });
 });
 

@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -55,7 +55,7 @@ enum OrderSource {
 }
 
 model User {
-  id            String         @id @default(cuid())
+  id            String         @id @default(auto()) @map("_id")
   name          String
   phone         String         @unique
   passwordHash  String
@@ -75,7 +75,7 @@ model User {
 }
 
 model RefreshToken {
-  id        String   @id @default(cuid())
+  id        String   @id @default(auto()) @map("_id")
   tokenHash String   @unique
   userId    String
   user      User     @relation(fields: [userId], references: [id])
@@ -85,7 +85,7 @@ model RefreshToken {
 }
 
 model Rider {
-  id               String      @id @default(cuid())
+  id               String      @id @default(auto()) @map("_id")
   name             String
   phone            String      @unique
   nationalId       String?
@@ -108,7 +108,7 @@ model Rider {
 }
 
 model Merchant {
-  id                    String         @id @default(cuid())
+  id                    String         @id @default(auto()) @map("_id")
   name                  String
   connector             Connector      @default(APP)
   status                MerchantStatus @default(DISCONNECTED)
@@ -122,7 +122,7 @@ model Merchant {
 }
 
 model Order {
-  id             String      @id @default(cuid())
+  id             String      @id @default(auto()) @map("_id")
   merchantId     String?     // made nullable in preparation for removing Merchant dependency
   merchant       Merchant?   @relation(fields: [merchantId], references: [id])
   customerName   String
@@ -161,7 +161,7 @@ model Order {
 }
 
 model OrderActivity {
-  id        String   @id @default(cuid())
+  id        String   @id @default(auto()) @map("_id")
   orderId   String
   order     Order    @relation(fields: [orderId], references: [id])
   userId    String?
@@ -172,7 +172,7 @@ model OrderActivity {
 }
 
 model OrderAssignment {
-  id           String   @id @default(cuid())
+  id           String   @id @default(auto()) @map("_id")
   orderId      String
   order        Order    @relation(fields: [orderId], references: [id])
   riderId      String

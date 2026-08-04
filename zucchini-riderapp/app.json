@@ -13,10 +13,6 @@
     },
     "icon": "./assets/icon.png",
     "backgroundColor": "#f6f7fb",
-    "updates": {
-      "fallbackToCacheOnError": true,
-      "url": "https://u.expo.dev/09f94ba1-1234-4567-8901-23456789abcd"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -38,7 +34,11 @@
         "ACCESS_BACKGROUND_LOCATION",
         "INTERNET",
         "RECORD_AUDIO",
-        "CAMERA"
+        "CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "softwareKeyboardLayoutMode": "pan"
     },
@@ -63,7 +63,7 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "09f94ba1-1234-4567-8901-23456789abcd"
+        "projectId": "d5ef5d30-78b3-41fc-b0b0-43cdc6e99da7"
       }
     }
   }

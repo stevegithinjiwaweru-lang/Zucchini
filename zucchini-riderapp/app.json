@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "Easybox Rider",
+    "slug": "easybox-rider-app",
+    "version": "1.0.0",
+    "runtimeVersion": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#f6f7fb",
+    "updates": {
+      "fallbackToCacheOnError": true,
+      "url": "https://u.expo.dev/09f94ba1-1234-4567-8901-23456789abcd"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTabletMode": true,
+      "bundleIdentifier": "com.easybox.rider.ios",
+      "buildNumber": "1.0.0"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#e40d6e"
+      },
+      "package": "com.easybox.rider",
+      "versionCode": 1,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "INTERNET",
+        "RECORD_AUDIO",
+        "CAMERA"
+      ],
+      "softwareKeyboardLayoutMode": "pan"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "easybox",
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Easybox Rider uses your location to share live delivery tracking with dispatch and customers.",
+          "locationAlwaysPermission": "Easybox Rider needs access to your location even when the app is in the background to enable real-time delivery tracking."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Easybox Rider needs access to your camera to capture proof of delivery photos."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "09f94ba1-1234-4567-8901-23456789abcd"
+      }
+    }
+  }
+}

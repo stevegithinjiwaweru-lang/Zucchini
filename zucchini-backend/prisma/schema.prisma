@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  DISPATCHER
+  RIDER
+}
+
+enum RiderStatus {
+  AVAILABLE
+  BUSY
+  OFFLINE
+  SUSPENDED
+  IN_DELIVERY
+}
+
+enum Connector {
+  CSV
+  API
+  APP
+}
+
+enum MerchantStatus {
+  CONNECTED
+  DISCONNECTED
+}
+
+enum PaymentType {
+  COD
+  PREPAID
+}
+
+enum OrderStatus {
+  NEW
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  RETURNED
+}
+
+enum OrderSource {
+  MANUAL
+  SHOPIFY
+  WHATSAPP
+  CSV
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  phone         String         @unique
+  passwordHash  String
+  role          Role           @default(DISPATCHER)
+  riderId       String?        @unique
+  rider         Rider?         @relation(fields: [riderId], references: [id])
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Rider {
+  id               String      @id @default(cuid())
+  name             String
+  phone            String      @unique
+  nationalId       String?
+  drivingLicenceNo String?
+  bikeReg          String?
+  vehicleType      String?
+  branch           String?
+  status           RiderStatus @default(OFFLINE)
+  lastActiveAt     DateTime?
+  lastLat          Float?
+  lastLng          Float?
+  lastLocationAt   DateTime?
+  user             User?
+  orders           Order[]
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+model Merchant {
+  id                    String         @id @default(cuid())
+  name                  String
+  connector             Connector      @default(APP)
+  status                MerchantStatus @default(DISCONNECTED)
+  shopifyShopDomain     String?        @unique
+  shopifyAccessTokenEnc String?
+  shopifyWebhookSecret  String?
+  lastSyncAt            DateTime?
+  orders                Order[]
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+}
+
+model Order {
+  id             String      @id @default(cuid())
+  merchantId     String?     // made nullable in preparation for removing Merchant dependency
+  merchant       Merchant?   @relation(fields: [merchantId], references: [id])
+  customerName   String
+  phone          String
+  address        String
+  destination    String?
+  pickupLat      Float?
+  pickupLng      Float?
+  destinationLat Float?
+  destinationLng Float?
+  lat            Float?
+  lng            Float?
+  distance       Float?
+  scheduledAt    DateTime?
+  amount         Float       @default(0)
+  paymentType    PaymentType @default(COD)
+  status         OrderStatus @default(NEW)
+  riderId        String?
+  rider          Rider?      @relation(fields: [riderId], references: [id])
+  source         OrderSource @default(MANUAL)
+  externalId     String?     @unique
+  notes          String?
+  podUrl         String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deliveredAt    DateTime?
+}

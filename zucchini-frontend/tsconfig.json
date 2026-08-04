@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+
+    "jsx": "react-jsx",
+
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+
+    "strict": true,
+
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+
+    "noEmit": true,
+
+    "baseUrl": ".",
+
+    "types": ["vite/client"],
+
+    // ✅ FIX: suppress future TS 7 deprecation warning
+    "ignoreDeprecations": "6.0"
+  },
+
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}

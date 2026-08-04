@@ -93,3 +93,17 @@ export const connectShopifySchema = z.object({
     .regex(/\.myshopify\.com$/, "Must be a *.myshopify.com domain"),
   accessToken: z.string().min(10),
 });
+
+// New schema for partial order updates (Edit Order)
+export const updateOrderSchema = z.object({
+  externalId: z.string().min(1).optional(),
+  customerName: z.string().min(1).optional(),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  destination: z.string().optional(),
+  merchantId: z.string().optional().nullable(),
+  scheduledAt: z.string().datetime().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  amount: coerceNumber(z.number().nonnegative()).optional(),
+  distance: coerceNumber(z.number().nonnegative()).optional(),
+});

@@ -57,7 +57,14 @@ export const createRider = asyncHandler(async (req: AuthedRequest, res: Response
   if (body.password) {
     const passwordHash = await hashPassword(body.password);
     await prisma.user.create({
-      data: { name: body.name, phone: body.phone, passwordHash, role: "RIDER", riderId: rider.id },
+      data: {
+        name: body.name,
+        phone: body.phone,
+        passwordHash,
+        role: "RIDER",
+        riderId: rider.id,
+        forcePasswordChange: false,
+      },
     });
   }
 
@@ -71,9 +78,27 @@ export const updateRider = asyncHandler(async (req: AuthedRequest, res: Response
   const body = updateRiderSchema.parse(req.body);
   const { password, ...rest } = body;
 
+  // Update rider fields
   const rider = await prisma.rider.update({ where: { id }, data: rest }).catch(() => {
     throw new ApiError(404, "Rider not found");
   });
+
+  // If a password was provided, upsert the linked user based on phone
+  if (password) {
+    const passwordHash = await hashPassword(password);
+    const existingUser = await prisma.user.findUnique({ where: { phone: rider.phone } });
+
+    if (existingUser) {
+      await prisma.user.update({
+        where: { id: existingUser.id },
+        data: { passwordHash, forcePasswordChange: false },
+      });
+    } else {
+      await prisma.user.create({
+        data: { name: rider.name, phone: rider.phone, passwordHash, role: "RIDER", riderId: rider.id, forcePasswordChange: false },
+      });
+    }
+  }
 
   res.json({ ok: true, data: serializeRider(rider), rider: serializeRider(rider) });
 });

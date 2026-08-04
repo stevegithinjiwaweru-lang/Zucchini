@@ -27,6 +27,11 @@ function serializeRider(rider: any) {
   };
 }
 
+function generateTempPassword() {
+  // simple, reasonably strong temporary password: 10 chars alphanumeric
+  return Math.random().toString(36).slice(2, 12);
+}
+
 export const listRiders = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const limit = Math.min(parseInt(String(req.query.limit || "200"), 10) || 200, 500);
   const riders = await prisma.rider.findMany({
@@ -53,28 +58,51 @@ export const createRider = asyncHandler(async (req: AuthedRequest, res: Response
     },
   });
 
-  // Optionally provision a login for the rider (e.g. for a future rider mobile app).
+  // Provision a User login for the rider: if caller provided a password use it,
+  // otherwise generate a temporary password and return it in the response.
+  let tempPassword: string | undefined;
   if (body.password) {
     const passwordHash = await hashPassword(body.password);
     await prisma.user.create({
       data: { name: body.name, phone: body.phone, passwordHash, role: "RIDER", riderId: rider.id },
     });
+  } else {
+    tempPassword = generateTempPassword();
+    const passwordHash = await hashPassword(tempPassword);
+    await prisma.user.create({
+      data: { name: body.name, phone: body.phone, passwordHash, role: "RIDER", riderId: rider.id, forcePasswordChange: true },
+    });
   }
 
   // `rider` is included alongside `data` for compatibility with the
   // frontend's riders.service.ts, which reads response.data.rider.
-  res.status(201).json({ ok: true, data: serializeRider(rider), rider: serializeRider(rider) });
+  try {
+    getIO()?.emit("rider:created", rider);
+  } catch (e) {
+    console.warn("Failed to emit rider:created event", e);
+  }
+
+  res.status(201).json({ ok: true, data: serializeRider(rider), rider: serializeRider(rider), tempPassword });
 });
 
 export const updateRider = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { id } = req.params;
   const body = updateRiderSchema.parse(req.body);
-  const { password, ...rest } = body;
+  const { password, ...rest } = body as any;
+
+  // If password supplied in update, update the linked user password as well
+  if (password) {
+    const user = await prisma.user.findUnique({ where: { riderId: id } });
+    if (!user) throw new ApiError(404, "Linked user not found to update password");
+    const passwordHash = await hashPassword(password);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash, forcePasswordChange: false, passwordChangedAt: new Date() } });
+  }
 
   const rider = await prisma.rider.update({ where: { id }, data: rest }).catch(() => {
     throw new ApiError(404, "Rider not found");
   });
 
+  getIO()?.emit("rider:updated", rider);
   res.json({ ok: true, data: serializeRider(rider), rider: serializeRider(rider) });
 });
 

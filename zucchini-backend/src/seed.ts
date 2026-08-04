@@ -14,6 +14,7 @@ async function main() {
         phone: adminPhone,
         passwordHash: await hashPassword(adminPassword),
         role: "ADMIN",
+        forcePasswordChange: true,
       },
     });
     console.log(`Created admin login -> phone: ${adminPhone}, password: ${adminPassword}`);
@@ -31,6 +32,7 @@ async function main() {
         phone: dispatcherPhone,
         passwordHash: await hashPassword(dispatcherPassword),
         role: "DISPATCHER",
+        forcePasswordChange: true,
       },
     });
     console.log(`Created dispatcher login -> phone: ${dispatcherPhone}, password: ${dispatcherPassword}`);

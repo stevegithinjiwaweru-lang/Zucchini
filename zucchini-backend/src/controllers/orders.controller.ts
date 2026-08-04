@@ -342,6 +342,37 @@ export const updateOrderStatus = asyncHandler(async (req: AuthedRequest, res: Re
   res.json({ ok: true, data: order });
 });
 
+// Permanently delete an order — used by the Dispatch board's "Delete" action.
+// If the order currently has a rider assigned, we free that rider back to
+// AVAILABLE (as long as they have no other active orders) before removing it.
+export const deleteOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const orderId = req.params.id;
+
+  const existing = await prisma.order.findUnique({ where: { id: orderId } });
+  if (!existing) throw new ApiError(404, "Order not found");
+
+  const prevRiderId = existing.riderId;
+
+  await prisma.order.delete({ where: { id: orderId } }).catch((e) => {
+    console.error("deleteOrder failed:", (e && e.message) || e, { orderId });
+    throw new ApiError(404, "Order not found");
+  });
+
+  if (prevRiderId) {
+    const stillBusy = await prisma.order.count({
+      where: { riderId: prevRiderId, status: { in: ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"] } },
+    });
+    if (stillBusy === 0) {
+      await prisma.rider.update({ where: { id: prevRiderId }, data: { status: "AVAILABLE" } }).catch(() => {
+        console.warn("Failed to update rider status after order delete", prevRiderId);
+      });
+    }
+  }
+
+  getIO()?.emit("order:deleted", { id: orderId });
+  res.json({ ok: true, data: { id: orderId } });
+});
+
 // update bulkUploadCsv to require externalId per row for WhatsApp CSVs
 export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const file = (req as any).file as Express.Multer.File | undefined;

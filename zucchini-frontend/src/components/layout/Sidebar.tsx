@@ -1,14 +1,13 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import sidebarLogo from "../../assets/logo.svg";
+import sidebarLogo from "../../assets/logo.png";
 
 const Sidebar: React.FC = () => {
   return (
     <aside className="sidebar" role="navigation" aria-label="Main navigation">
       <div>
         <div className="brand">
-          <img src={sidebarLogo} alt="Zucchini logo" />
-          <div className="title">Zucchini</div>
+          <img src={sidebarLogo} alt="Easybox Logistics" />
         </div>
 
         <nav className="nav" aria-label="Primary">

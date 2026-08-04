@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Row, Col, Card, Spin, Empty, Table, Button, message } from "antd";
+import { Row, Col, Card, Spin, Empty, Table, Button, Dropdown, Modal, message } from "antd";
+import { DownOutlined, ExclamationCircleOutlined } from "@ant-design/icons";
 import DispatchFilters from "./DispatchFilters";
 import AssignRiderModal from "./AssignRiderModal";
 import DispatchToolbar from "./DispatchToolbar";
 import CreateOrderModal from "./CreateOrderModal";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 
-import { fetchPendingDispatchOrders } from "../../services/dispatch.service";
+import { fetchPendingDispatchOrders, deleteOrder } from "../../services/dispatch.service";
 import { getSocket } from "../../services/socket";
 
 import StatusTag from "../common/StatusTag";
@@ -130,33 +131,70 @@ const DispatchPage: React.FC = () => {
       title: "Actions",
       key: "actions",
       width: 220,
-      render: (_: any, record: any) => (
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button
-            size="small"
-            onClick={() => window.location.assign(`/orders/${record.id}`)}
-          >
-            View
-          </Button>
-
-          <Button
-            size="small"
-            type="primary"
-            onClick={() => {
+      render: (_: any, record: any) => {
+        const hasRider = !!(record.riderId || record.rider);
+        const menuItems = [
+          {
+            key: "assign",
+            label: hasRider ? "Reassign Rider" : "Assign Rider",
+            onClick: () => {
               setAssignTargetOrder(record.id);
               setAssignModalOpen(true);
-            }}
-          >
-            Assign Rider
-          </Button>
-        </div>
-      ),
+            },
+          },
+          {
+            key: "delete",
+            label: <span style={{ color: "#ef4444" }}>Delete Order</span>,
+            onClick: () => handleDeleteOrder(record),
+          },
+        ];
+
+        return (
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button
+              size="small"
+              onClick={() => window.location.assign(`/orders/${record.id}`)}
+            >
+              View
+            </Button>
+
+            <Dropdown menu={{ items: menuItems }} trigger={["click"]}>
+              <Button size="small" type="primary">
+                Actions <DownOutlined />
+              </Button>
+            </Dropdown>
+          </div>
+        );
+      },
     },
   ];
 
   const rowSelection = {
     selectedRowKeys,
     onChange: (keys: React.Key[]) => setSelectedRowKeys(keys as string[]),
+  };
+
+  const handleDeleteOrder = (record: any) => {
+    Modal.confirm({
+      title: "Delete this order?",
+      icon: <ExclamationCircleOutlined />,
+      content: `Order ${record.externalId || record.id?.slice(0, 8).toUpperCase()} for ${
+        record.customerName
+      } will be permanently deleted. This cannot be undone.`,
+      okText: "Delete",
+      okType: "danger",
+      cancelText: "Cancel",
+      onOk: async () => {
+        try {
+          await deleteOrder(record.id);
+          message.success("Order deleted");
+          queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
+          queryClient.invalidateQueries({ queryKey: ["orders"] });
+        } catch (err: any) {
+          message.error(err?.response?.data?.error || err.message || "Failed to delete order");
+        }
+      },
+    });
   };
 
   const handleBulkAssign = () => {

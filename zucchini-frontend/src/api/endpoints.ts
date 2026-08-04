@@ -12,6 +12,7 @@ export const endpoints = {
     getMine: "/orders/mine",
     getOne: (id: string) => `/orders/${id}`,
     assign: (id: string) => `/orders/${id}/assign`,
+    delete: (id: string) => `/orders/${id}`,
     updateStatus: (id: string) => `/orders/${id}/status`,
     uploadPod: (id: string) => `/orders/${id}/pod`,
     bulkCsv: "/orders/bulk-csv",

@@ -10,6 +10,7 @@ import {
   assignOrder,
   unassignOrder,
   updateOrderStatus,
+  deleteOrder,
   bulkUploadCsv,
   uploadPod,
 } from "../controllers/orders.controller";
@@ -49,6 +50,11 @@ router.post("/whatsapp", requireRole("ADMIN", "DISPATCHER"), createWhatsappOrder
  */
 router.post("/:id/assign", requireRole("ADMIN", "DISPATCHER"), assignOrder);
 router.post("/:id/unassign", requireRole("ADMIN", "DISPATCHER"), unassignOrder);
+
+/**
+ * Permanently delete an order
+ */
+router.delete("/:id", requireRole("ADMIN", "DISPATCHER"), deleteOrder);
 
 /**
  * Update order status

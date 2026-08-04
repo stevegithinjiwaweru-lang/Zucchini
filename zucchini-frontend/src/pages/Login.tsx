@@ -2,9 +2,9 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, Form, Input, Button, Typography, message } from "antd";
 import { login } from "../services/auth.service";
-import logo from "../assets/logo.svg";
+import logo from "../assets/logo.png";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface LoginFormValues {
   phone: string;
@@ -77,16 +77,12 @@ const Login: React.FC = () => {
         >
           <img
             src={logo}
-            alt="Zucchini"
+            alt="Easybox Logistics"
             style={{
-              width: 70,
+              width: 200,
               marginBottom: 12,
             }}
           />
-
-          <Title level={3} style={{ marginBottom: 0 }}>
-            Zucchini
-          </Title>
 
           <Text type="secondary">
             Dispatch & Operations Management

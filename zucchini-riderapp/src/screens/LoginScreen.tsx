@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, Image } from "react-native";
 import { useAuth } from "../context/AuthContext";
 import { COLORS, RADIUS } from "../theme/colors";
+import logo from "../../assets/logo.png";
 
 const LoginScreen: React.FC = () => {
   const { login } = useAuth();
@@ -26,7 +27,7 @@ const LoginScreen: React.FC = () => {
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <Text style={styles.logo}>Easybox Rider</Text>
+      <Image source={logo} style={styles.logo} resizeMode="contain" />
       <Text style={styles.subtitle}>Sign in to see your deliveries</Text>
 
       <View style={styles.form}>
@@ -59,7 +60,7 @@ const LoginScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background, justifyContent: "center", padding: 24 },
-  logo: { fontSize: 28, fontWeight: "800", color: COLORS.primary, textAlign: "center" },
+  logo: { width: "100%", height: 90, alignSelf: "center" },
   subtitle: { fontSize: 14, color: COLORS.muted, textAlign: "center", marginBottom: 32, marginTop: 4 },
   form: { backgroundColor: COLORS.card, borderRadius: RADIUS, padding: 20 },
   label: { fontSize: 13, fontWeight: "600", color: COLORS.text, marginBottom: 6, marginTop: 12 },

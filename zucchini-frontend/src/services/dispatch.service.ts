@@ -54,6 +54,15 @@ export const assignOrder = async (
 };
 
 /**
+ * Permanently delete an order
+ * Backend: DELETE /api/orders/:id
+ */
+export const deleteOrder = async (orderId: string) => {
+  const response = await client.delete(`/orders/${orderId}`);
+  return response.data;
+};
+
+/**
  * Fetch available riders
  * Backend: GET /api/riders
  */

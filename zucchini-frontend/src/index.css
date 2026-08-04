@@ -12,8 +12,8 @@
 html,body,#root{height:100%;margin:0;font-family:var(--font-sans);background:#f6f7fb;color:#0b2136}
 .app{display:flex;min-height:100vh}
 .sidebar{width:260px;background:var(--primary-pink);color:#fff;padding:20px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:space-between}
-.brand{display:flex;align-items:center;gap:12px;margin-bottom:20px}
-.brand img{width:52px;height:52px;border-radius:10px}
+.brand{display:flex;align-items:center;margin-bottom:20px;background:#fff;border-radius:10px;padding:10px}
+.brand img{width:100%;height:auto;display:block}
 .brand .title{font-weight:800;font-size:16px;line-height:1}
 .nav{margin-top:8px}
 .nav a{display:block;color:rgba(255,255,255,0.92);padding:10px 8px;border-radius:8px;text-decoration:none;margin-bottom:6px}

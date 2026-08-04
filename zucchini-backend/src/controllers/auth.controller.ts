@@ -7,8 +7,8 @@ import { asyncHandler, ApiError } from "../utils/asyncHandler";
 import { env } from "../config/env";
 import { AuthedRequest } from "../middleware/auth";
 
-function publicUser(user: { id: string; name: string; phone: string; role: string; riderId?: string | null }) {
-  return { id: user.id, name: user.name, phone: user.phone, role: user.role, riderId: user.riderId ?? null };
+function publicUser(user: { id: string; name: string; phone: string; role: string; riderId?: string | null; forcePasswordChange?: boolean }) {
+  return { id: user.id, name: user.name, phone: user.phone, role: user.role, riderId: user.riderId ?? null, forcePasswordChange: !!user.forcePasswordChange };
 }
 
 async function issueTokens(user: { id: string; role: string; riderId?: string | null }) {

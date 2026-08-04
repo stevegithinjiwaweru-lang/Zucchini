@@ -64,6 +64,14 @@ model User {
   rider         Rider?         @relation(fields: [riderId], references: [id])
   refreshTokens RefreshToken[]
   createdAt     DateTime       @default(now())
+
+  // Force riders to change password on first login
+  forcePasswordChange Boolean   @default(false)
+  passwordChangedAt    DateTime?
+
+  // back-relations
+  createdActivities OrderActivity[] @relation("activityUser")
+  assignedOrders    OrderAssignment[] @relation("assignmentUser")
 }
 
 model RefreshToken {
@@ -94,6 +102,9 @@ model Rider {
   orders           Order[]
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
+
+  // assignment history
+  assignments      OrderAssignment[]
 }
 
 model Merchant {
@@ -138,4 +149,37 @@ model Order {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   deliveredAt    DateTime?
+
+  // soft-delete
+  deletedAt      DateTime?
+  deletedBy      String?
+  deletedByUser  User?       @relation(fields: [deletedBy], references: [id])
+
+  // relations
+  activities     OrderActivity[]
+  assignments    OrderAssignment[]
+}
+
+model OrderActivity {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  userId    String?
+  user      User?    @relation("activityUser", fields: [userId], references: [id])
+  action    String
+  notes     String?
+  createdAt DateTime @default(now())
+}
+
+model OrderAssignment {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id])
+  riderId      String
+  rider        Rider    @relation(fields: [riderId], references: [id])
+  assignedById String?
+  assignedBy   User?    @relation("assignmentUser", fields: [assignedById], references: [id])
+  assignedAt   DateTime @default(now())
+  unassignedAt DateTime?
+  note         String?
 }

@@ -11,15 +11,16 @@ import {
 import { AuthedRequest } from "../middleware/auth";
 import { getIO } from "../socket";
 import { parseCsv } from "../utils/csv";
+import { OrderStatus } from "@prisma/client";
 
 // The frontend's dispatch board currently queries status=PENDING, which isn't
 // one of our real statuses (NEW/ASSIGNED/.../RETURNED). We treat PENDING as an
 // alias for NEW so unassigned orders still show up — see README for the
 // one-line frontend fix to send NEW directly instead.
 function normalizeStatusFilter(status?: string) {
-  if (!status) return undefined;
-  if (status === "PENDING") return "NEW";
-  return status;
+  if (!status) return undefined as OrderStatus | undefined;
+  if (status === "PENDING") return OrderStatus.NEW;
+  return status as OrderStatus;
 }
 
 // Helper to add orderNumber alias to order object
@@ -95,7 +96,7 @@ export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response)
 export const getMyOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {
   if (!req.user?.riderId) throw new ApiError(400, "This account is not linked to a rider");
   const orders = await prisma.order.findMany({
-    where: { riderId: req.user.riderId, status: { in: ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"] } },
+    where: { riderId: req.user.riderId, status: { in: [OrderStatus.ASSIGNED, OrderStatus.PICKED_UP, OrderStatus.IN_TRANSIT] } },
     orderBy: { createdAt: "desc" },
   });
   res.json({ ok: true, data: orders.map(augmentOrder) });
@@ -130,7 +131,7 @@ export const updateOrder = asyncHandler(async (req: AuthedRequest, res: Response
     notes: body.notes,
     scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined,
     paymentType: body.paymentType,
-    status: body.status,
+    status: body.status as OrderStatus | undefined,
     externalId: body.externalId,
   };
 
@@ -197,7 +198,7 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
     paymentType: body.paymentType,
     scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
     notes: body.notes,
-    status: "NEW",
+    status: OrderStatus.NEW,
     source: "MANUAL",
     externalId: body.externalId,
   };
@@ -241,7 +242,7 @@ export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response
   const body = assignOrderSchema.parse(req.body) as any; // { riderId: string }
   const update = {
     riderId: body.riderId,
-    status: "ASSIGNED",
+    status: OrderStatus.ASSIGNED,
   };
   const order = await prisma.order.update({ where: { id }, data: update }).catch(() => {
     throw new ApiError(404, "Order not found");
@@ -254,7 +255,7 @@ export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response
 // Unassign an order from a rider
 export const unassignOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { id } = req.params;
-  const order = await prisma.order.update({ where: { id }, data: { riderId: null, status: "NEW" } }).catch(() => {
+  const order = await prisma.order.update({ where: { id }, data: { riderId: null, status: OrderStatus.NEW } }).catch(() => {
     throw new ApiError(404, "Order not found");
   });
   const augmented = augmentOrder(order);
@@ -266,7 +267,7 @@ export const unassignOrder = asyncHandler(async (req: AuthedRequest, res: Respon
 export const updateOrderStatus = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { id } = req.params;
   const body = updateOrderStatusSchema.parse(req.body) as any; // { status: string }
-  const order = await prisma.order.update({ where: { id }, data: { status: body.status } }).catch(() => {
+  const order = await prisma.order.update({ where: { id }, data: { status: body.status as OrderStatus } }).catch(() => {
     throw new ApiError(404, "Order not found");
   });
   const augmented = augmentOrder(order);
@@ -299,7 +300,7 @@ export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: 
     paymentType: body.paymentType,
     scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
     notes: body.notes,
-    status: "NEW",
+    status: OrderStatus.NEW,
     source: "WHATSAPP",
     externalId: body.externalId,
   };

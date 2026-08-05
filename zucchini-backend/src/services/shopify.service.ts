@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { decryptSecret } from "../utils/crypto";
 import { ApiError } from "../utils/asyncHandler";
 import { getIO } from "../socket";
+import { OrderStatus } from "@prisma/client";
 
 const SHOPIFY_API_VERSION = "2024-10";
 
@@ -95,7 +96,7 @@ export async function importShopifyOrder(merchantId: string, payload: ShopifyOrd
       pickupLng: payload.shipping_address?.longitude ?? undefined,
       amount: payload.total_price ? parseFloat(payload.total_price) : 0,
       paymentType: payload.financial_status === "paid" ? "PREPAID" : "COD",
-      status: "NEW",
+      status: OrderStatus.NEW,
       source: "SHOPIFY",
       externalId,
       notes: `Shopify order ${payload.name}`,

@@ -13,6 +13,7 @@ import {
   deleteOrder,
   bulkUploadCsv,
   uploadPod,
+  updateOrder,
 } from "../controllers/orders.controller";
 
 import { csvUpload, podUpload } from "../utils/uploads";
@@ -50,6 +51,11 @@ router.post("/whatsapp", requireRole("ADMIN", "DISPATCHER"), createWhatsappOrder
  */
 router.post("/:id/assign", requireRole("ADMIN", "DISPATCHER"), assignOrder);
 router.post("/:id/unassign", requireRole("ADMIN", "DISPATCHER"), unassignOrder);
+
+/**
+ * Update order (full/partial) - edit order details
+ */
+router.put("/:id", requireRole("ADMIN", "DISPATCHER"), updateOrder);
 
 /**
  * Permanently delete an order

@@ -9,6 +9,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 
 import { fetchPendingDispatchOrders, deleteOrder } from "../../services/dispatch.service";
 import { getSocket } from "../../services/socket";
+import client from "../../api/client";
 
 import StatusTag from "../common/StatusTag";
 import { ensureArray } from "../../utils/normalize";
@@ -68,19 +69,38 @@ const DispatchPage: React.FC = () => {
 
   const orders = useMemo(() => ensureArray(data), [data]);
 
+  const handleDelete = (id: string) => {
+    Modal.confirm({
+      title: "Delete order",
+      content: "Are you sure you want to permanently delete this order? This action cannot be undone.",
+      okText: "Delete",
+      okType: "danger",
+      onOk: async () => {
+        try {
+          await client.delete(`/orders/${id}`);
+          message.success("Order deleted");
+          queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
+          queryClient.invalidateQueries({ queryKey: ["orders"] });
+        } catch (err: any) {
+          message.error(err?.response?.data?.error || err?.message || "Failed to delete order");
+        }
+      },
+    });
+  };
+
   const columns = [
     {
       title: "Order No.",
-      dataIndex: "externalId",
-      key: "externalId",
+      dataIndex: "orderNumber",
+      key: "orderNumber",
       // System order no. on top; the dispatcher's own order number (set when
       // the order was created) shown below it.
-      render: (externalId: string, record: any) =>
+      render: (orderNumber: string, record: any) =>
         record?.id ? (
           <a href={`/orders/${record.id}`}>
-            <div>{record.id.slice(0, 8).toUpperCase()}</div>
-            {externalId && (
-              <div style={{ fontSize: 12, color: "#888", fontWeight: 400 }}>{externalId}</div>
+            <div style={{ fontWeight: 600 }}>{orderNumber || record.externalId || (record.id ? record.id.slice(0, 8).toUpperCase() : "—")}</div>
+            {record.externalId && (
+              <div style={{ fontSize: 12, color: "#888", fontWeight: 400 }}>{record.externalId}</div>
             )}
           </a>
         ) : (
@@ -107,173 +127,46 @@ const DispatchPage: React.FC = () => {
       title: "Distance",
       dataIndex: "distance",
       key: "distance",
-      render: (distance: number) => (distance ? `${distance} km` : "—"),
-    },
-    {
-      title: "Scheduled",
-      dataIndex: "scheduledAt",
-      key: "scheduledAt",
-      render: (date: string) => (date ? new Date(date).toLocaleString() : "—"),
-    },
-    {
-      title: "Created",
-      dataIndex: "createdAt",
-      key: "createdAt",
-      render: (date: string) => (date ? new Date(date).toLocaleString() : "—"),
-    },
-    {
-      title: "Status",
-      dataIndex: "status",
-      key: "status",
-      render: (status: string) => <StatusTag status={status} />,
-    },
-    {
-      title: "Actions",
-      key: "actions",
-      width: 220,
-      render: (_: any, record: any) => {
-        const hasRider = !!(record.riderId || record.rider);
-        const menuItems = [
-          {
-            key: "assign",
-            label: hasRider ? "Reassign Rider" : "Assign Rider",
-            onClick: () => {
-              setAssignTargetOrder(record.id);
-              setAssignModalOpen(true);
-            },
-          },
-          {
-            key: "delete",
-            label: <span style={{ color: "#ef4444" }}>Delete Order</span>,
-            onClick: () => handleDeleteOrder(record),
-          },
-        ];
-
-        return (
-          <div style={{ display: "flex", gap: 8 }}>
-            <Button
-              size="small"
-              onClick={() => window.location.assign(`/orders/${record.id}`)}
-            >
-              View
-            </Button>
-
-            <Dropdown menu={{ items: menuItems }} trigger={["click"]}>
-              <Button size="small" type="primary">
-                Actions <DownOutlined />
-              </Button>
-            </Dropdown>
-          </div>
-        );
-      },
+      render: (d: number) => (d ? `${d} km` : "—"),
     },
   ];
 
-  const rowSelection = {
-    selectedRowKeys,
-    onChange: (keys: React.Key[]) => setSelectedRowKeys(keys as string[]),
-  };
-
-  const handleDeleteOrder = (record: any) => {
-    Modal.confirm({
-      title: "Delete this order?",
-      icon: <ExclamationCircleOutlined />,
-      content: `Order ${record.externalId || record.id?.slice(0, 8).toUpperCase()} for ${
-        record.customerName
-      } will be permanently deleted. This cannot be undone.`,
-      okText: "Delete",
-      okType: "danger",
-      cancelText: "Cancel",
-      onOk: async () => {
-        try {
-          await deleteOrder(record.id);
-          message.success("Order deleted");
-          queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
-          queryClient.invalidateQueries({ queryKey: ["orders"] });
-        } catch (err: any) {
-          message.error(err?.response?.data?.error || err.message || "Failed to delete order");
-        }
-      },
-    });
-  };
-
-  const handleBulkAssign = () => {
-    if (!selectedRowKeys.length) {
-      message.info("Select orders to assign");
-      return;
-    }
-    setAssignModalOpen(true);
-  };
-
   return (
-    <div className="dispatch-page">
-      <Row gutter={12} style={{ marginBottom: 12 }}>
-        <Col span={16}>
-          <Card>
-            <DispatchFilters
-              filters={filters}
-              onChange={(patch: any) =>
-                setFilters((old: any) => ({
-                  ...old,
-                  ...patch,
-                }))
-              }
-            />
-          </Card>
-        </Col>
+    <Card className="dispatch-page">
+      <DispatchToolbar selectedCount={selectedRowKeys.length} onBulkAssign={() => setAssignModalOpen(true)} onRefresh={() => refetch()} onCreateOrder={() => setCreateOrderOpen(true)} />
 
-        <Col span={8}>
-          <Card>
-            <DispatchToolbar
-              selectedCount={selectedRowKeys.length}
-              onBulkAssign={handleBulkAssign}
-              onRefresh={() => refetch()}
-              onCreateOrder={() => setCreateOrderOpen(true)}
-            />
-          </Card>
+      <Row gutter={12} style={{ marginTop: 12, marginBottom: 12 }}>
+        <Col span={24}>
+          <DispatchFilters filters={filters} onChange={(patch: any) => setFilters((f: any) => ({ ...f, ...patch }))} />
         </Col>
       </Row>
 
-      <Card>
-        {isLoading ? (
-          <div style={{ textAlign: "center", padding: 40 }}>
-            <Spin />
-          </div>
-        ) : (
+      <Row>
+        <Col span={24}>
           <Table
             rowKey="id"
             dataSource={orders}
             columns={columns}
-            rowSelection={rowSelection}
+            loading={isLoading}
             pagination={{
               current: filters.page,
               pageSize: filters.limit,
+              onChange: (page: number, pageSize?: number) => setFilters((f: any) => ({ ...f, page, limit: pageSize || f.limit })),
+            }}
+            rowSelection={{
+              selectedRowKeys,
+              onChange: (keys) => setSelectedRowKeys(keys as string[]),
             }}
             scroll={{ x: 1200 }}
           />
-        )}
+          {!isLoading && orders.length === 0 && <Empty description="No pending dispatch orders" />}
+        </Col>
+      </Row>
 
-        {orders.length === 0 && !isLoading && <Empty description="No pending dispatch orders" />}
-      </Card>
-
-      <AssignRiderModal
-        open={assignModalOpen}
-        orderId={assignTargetOrder}
-        selectedOrderIds={selectedRowKeys}
-        onClose={() => {
-          setAssignModalOpen(false);
-          setAssignTargetOrder(null);
-          setSelectedRowKeys([]);
-        }}
-        onAssigned={() => {
-          queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
-          queryClient.invalidateQueries({ queryKey: ["orders"] });
-          message.success("Assignment complete");
-        }}
-      />
+      <AssignRiderModal open={assignModalOpen} onClose={() => setAssignModalOpen(false)} orderId={assignTargetOrder} onAssigned={() => { queryClient.invalidateQueries(["dispatchOrders"]); queryClient.invalidateQueries(["orders"]); }} />
 
       <CreateOrderModal open={createOrderOpen} onClose={() => setCreateOrderOpen(false)} />
-    </div>
+    </Card>
   );
 };
 

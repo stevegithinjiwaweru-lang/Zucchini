@@ -63,6 +63,7 @@ model User {
   riderId       String?        @unique
   rider         Rider?         @relation(fields: [riderId], references: [id])
   refreshTokens RefreshToken[]
+  forcePasswordChange Boolean    @default(false)
   createdAt     DateTime       @default(now())
 }
 

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Card, Table, Empty, Button, Row, Col, Input, Select, DatePicker } from "antd";
+import { Card, Table, Empty, Button, Row, Col, Input, Select, DatePicker, Modal, message } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
@@ -47,18 +47,48 @@ const OrdersTableComponent: React.FC = () => {
 
   const orders = Array.isArray(data) ? data : data?.items || [];
 
+  const handleDelete = (id: string) => {
+    Modal.confirm({
+      title: "Delete order",
+      content: "Are you sure you want to permanently delete this order? This action cannot be undone.",
+      okText: "Delete",
+      okType: "danger",
+      onOk: async () => {
+        try {
+          await client.delete(`/orders/${id}`);
+          message.success("Order deleted");
+          queryClient.invalidateQueries({ queryKey: ["ordersPage"] });
+          queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
+        } catch (err: any) {
+          message.error(err?.response?.data?.error || err?.message || "Failed to delete order");
+        }
+      },
+    });
+  };
+
+  const handleEdit = async (record: any) => {
+    const newName = window.prompt("Customer name:", record.customerName || "");
+    if (newName == null) return; // cancelled
+    try {
+      await client.put(`/orders/${record.id}`, { customerName: newName });
+      message.success("Order updated");
+      queryClient.invalidateQueries({ queryKey: ["ordersPage"] });
+      queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
+    } catch (err: any) {
+      message.error(err?.response?.data?.error || err?.message || "Failed to update order");
+    }
+  };
+
   const columns = [
     {
       title: "Order No.",
-      dataIndex: "externalId",
-      key: "externalId",
-      // System order no. on top; the dispatcher's own order number (set when
-      // the order was created) shown below it.
-      render: (externalId: string, record: any) => (
+      dataIndex: "orderNumber",
+      key: "orderNumber",
+      render: (orderNumber: string, record: any) => (
         <a href={`/orders/${record.id}`}>
-          <div>{record.id?.slice(0, 8).toUpperCase()}</div>
-          {externalId && (
-            <div style={{ fontSize: 12, color: "#888", fontWeight: 400 }}>{externalId}</div>
+          <div style={{ fontWeight: 600 }}>{orderNumber || record.externalId || (record.id ? record.id.slice(0, 8).toUpperCase() : "—")}</div>
+          {record.externalId && record.externalId !== orderNumber && (
+            <div style={{ fontSize: 12, color: "#888", fontWeight: 400 }}>{record.externalId}</div>
           )}
         </a>
       ),
@@ -93,8 +123,11 @@ const OrdersTableComponent: React.FC = () => {
           <Button size="small" onClick={() => window.location.assign(`/orders/${record.id}`)}>
             View
           </Button>
-          <Button size="small" onClick={() => setReassignOrderId(record.id)}>
-            Reassign
+          <Button size="small" onClick={() => handleEdit(record)}>
+            Edit
+          </Button>
+          <Button size="small" danger onClick={() => handleDelete(record.id)}>
+            Delete
           </Button>
         </div>
       ),

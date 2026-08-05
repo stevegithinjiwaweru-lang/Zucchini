@@ -11,6 +11,7 @@ import { UPLOAD_ROOT } from "./utils/uploads";
 import authRoutes from "./routes/auth.routes";
 import orderRoutes from "./routes/orders.routes";
 import riderRoutes from "./routes/riders.routes";
+import usersRoutes from "./routes/users.routes";
 // merchants routes removed — merchants are no longer served by the API
 import shopifyRoutes from "./routes/shopify.routes";
 import dispatchRoutes from "./routes/dispatch.routes";
@@ -70,6 +71,7 @@ app.get(
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/riders", riderRoutes);
+app.use("/api/users", usersRoutes); // user password change & admin resets
 // Merchant API is removed — respond with 410 Gone for legacy clients
 app.use("/api/merchants", (_req, res) => res.status(410).json({ ok: false, message: "Merchants API removed" }));
 // Customer API (if any legacy paths) respond with 410 Gone

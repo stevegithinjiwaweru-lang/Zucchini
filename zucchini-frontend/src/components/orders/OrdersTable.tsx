@@ -52,13 +52,11 @@ const OrdersTableComponent: React.FC = () => {
       title: "Order No.",
       dataIndex: "externalId",
       key: "externalId",
-      // System order no. on top; the dispatcher's own order number (set when
-      // the order was created) shown below it.
       render: (externalId: string, record: any) => (
         <a href={`/orders/${record.id}`}>
-          <div>{record.id?.slice(0, 8).toUpperCase()}</div>
+          <div style={{ fontWeight: 700 }}>{externalId || record.id?.slice(0, 8).toUpperCase()}</div>
           {externalId && (
-            <div style={{ fontSize: 12, color: "#888", fontWeight: 400 }}>{externalId}</div>
+            <div style={{ fontSize: 12, color: "#888", fontWeight: 400 }}>{record.id?.slice(0, 8).toUpperCase()}</div>
           )}
         </a>
       ),

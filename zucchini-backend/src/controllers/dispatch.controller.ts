@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { prisma } from "../lib/prisma";
+import { OrderStatus } from "@prisma/client";
 
 
 /**
@@ -14,7 +15,7 @@ export async function listDispatches(
     const dispatches = await prisma.order.findMany({
       where: {
         riderId: null,
-        status: "NEW",
+        status: OrderStatus.NEW,
       },
       include: {
         merchant: true,
@@ -75,7 +76,7 @@ export async function assignDispatch(
 
         data: {
           riderId,
-          status: "ASSIGNED",
+          status: OrderStatus.ASSIGNED,
         },
 
       });

@@ -189,6 +189,8 @@ const Riders: React.FC = () => {
         vehicleType: vals.vehicleType,
         bikeReg: vals.bikeReg,
         branch: vals.branch,
+        password: vals.password,
+        confirmPassword: vals.confirmPassword,
       });
       const { rider, tempPassword } = res.data;
       message.success("Rider created");
@@ -352,7 +354,7 @@ const Riders: React.FC = () => {
                     {badge.label}
                   </Tag>
 
-                  <div style={{ width: 90, textAlign: "center", fontSize: 13 }}>
+                  <div style={{ width: 90, fontSize: 13 }}>
                     <div style={{ color: "#898781" }}>Active Orders</div>
                     <div style={{ fontWeight: 700 }}>{activeOrdersByRider.get(rider.id) || 0}</div>
                   </div>
@@ -380,170 +382,4 @@ const Riders: React.FC = () => {
                       </Button>
                     )}
 
-                    {["AVAILABLE", "BUSY", "IN_DELIVERY"].includes(rider.status) && (
-                      <Button danger onClick={() => setStatus(rider, "SUSPENDED")}>
-                        Suspend
-                      </Button>
-                    )}
-
-                    {["OFFLINE", "SUSPENDED"].includes(rider.status) && (
-                      <Button type="primary" onClick={() => setStatus(rider, "AVAILABLE")}>
-                        Activate
-                      </Button>
-                    )}
-
-                    <Button danger icon={<DeleteOutlined />} onClick={() => confirmDelete(rider)} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <Empty description="No riders match these filters" />
-        )}
-      </Card>
-
-      <Row gutter={16} style={{ marginTop: 16 }}>
-        <Col span={6}>
-          <Card>
-            <div style={{ color: "#e40d6e", fontWeight: 700, fontSize: 13 }}>Total Riders</div>
-            <div style={{ fontSize: 26, fontWeight: 800, marginTop: 6 }}>{summary.total}</div>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <div style={{ color: "#e40d6e", fontWeight: 700, fontSize: 13 }}>Active Riders</div>
-            <div style={{ fontSize: 26, fontWeight: 800, marginTop: 6 }}>{summary.active}</div>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <div style={{ color: "#e40d6e", fontWeight: 700, fontSize: 13 }}>Suspended Riders</div>
-            <div style={{ fontSize: 26, fontWeight: 800, marginTop: 6 }}>{summary.suspended}</div>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <div style={{ color: "#e40d6e", fontWeight: 700, fontSize: 13 }}>Avg. Performance</div>
-            <div style={{ fontSize: 26, fontWeight: 800, marginTop: 6 }}>{summary.avgPerformance}%</div>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* View profile modal */}
-      <Modal
-        title="Rider Profile"
-        open={!!profileRider}
-        onCancel={() => setProfileRider(null)}
-        footer={null}
-      >
-        {profileRider && (
-          <div>
-            <p><strong>Rider ID:</strong> {profileRider.id.slice(0, 8).toUpperCase()}</p>
-            <p><strong>Name:</strong> {profileRider.name}</p>
-            <p><strong>Phone:</strong> {profileRider.phone}</p>
-            <p><strong>National ID:</strong> {profileRider.nationalId || "—"}</p>
-            <p><strong>Driving Licence No.:</strong> {profileRider.drivingLicenceNo || "—"}</p>
-            <p><strong>Operational Zone:</strong> {profileRider.branch || "—"}</p>
-            <p><strong>Vehicle:</strong> {profileRider.vehicleType || "—"} {profileRider.bikeReg || ""}</p>
-            <p><strong>Status:</strong> {STATUS_BADGE[profileRider.status]?.label || profileRider.status}</p>
-            <p><strong>Active Orders:</strong> {activeOrdersByRider.get(profileRider.id) || 0}</p>
-            <p><strong>Last Active:</strong> {profileRider.lastActiveAt ? new Date(profileRider.lastActiveAt).toLocaleString() : "—"}</p>
-            <p><strong>Performance:</strong> {performanceByRider.get(profileRider.id) ?? 100}%</p>
-          </div>
-        )}
-      </Modal>
-
-      {/* Assign order modal */}
-      <Modal
-        title={`Assign an order to ${assignRider?.name || ""}`}
-        open={!!assignRider}
-        onCancel={() => {
-          setAssignRider(null);
-          setAssignOrderId(null);
-        }}
-        onOk={confirmAssign}
-        okButtonProps={{ disabled: !assignOrderId, loading: assignOrderMutation.isLoading }}
-        okText="Assign"
-      >
-        <Select
-          style={{ width: "100%" }}
-          placeholder="Select an unassigned order"
-          value={assignOrderId ?? undefined}
-          onChange={(v) => setAssignOrderId(v)}
-          options={unassignedOrders.map((o) => ({
-            label: `${o.externalId || o.id.slice(0, 8).toUpperCase()} — ${o.customerName || ""}`.trim(),
-            value: o.id,
-          }))}
-        />
-      </Modal>
-
-      {/* Add rider modal */}
-      <Modal
-        title="Add Rider"
-        open={addOpen}
-        onCancel={() => setAddOpen(false)}
-        footer={null}
-      >
-        <Form form={form} layout="vertical" onFinish={addRider}>
-          <Form.Item name="name" label="Full Name" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="phone" label="Phone Number" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="nationalId" label="National ID" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="drivingLicenceNo" label="Driving Licence Number" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="vehicleType" label="Vehicle Type" rules={[{ required: true }]}>
-            <Select options={VEHICLE_TYPES.map((v) => ({ label: v, value: v }))} />
-          </Form.Item>
-          <Form.Item name="bikeReg" label="Vehicle Registration Number" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="branch" label="Operational Zone">
-            <Input />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" loading={addLoading} block>
-            Create Rider
-          </Button>
-        </Form>
-      </Modal>
-
-      {/* Edit rider modal */}
-      <Modal title="Edit Rider" open={!!editRider} onCancel={() => setEditRider(null)} footer={null}>
-        <Form form={editForm} layout="vertical" onFinish={submitEdit}>
-          <Form.Item name="name" label="Full Name" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="phone" label="Phone Number" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="nationalId" label="National ID">
-            <Input />
-          </Form.Item>
-          <Form.Item name="drivingLicenceNo" label="Driving Licence Number">
-            <Input />
-          </Form.Item>
-          <Form.Item name="vehicleType" label="Vehicle Type">
-            <Select options={VEHICLE_TYPES.map((v) => ({ label: v, value: v }))} allowClear />
-          </Form.Item>
-          <Form.Item name="bikeReg" label="Vehicle Registration Number">
-            <Input />
-          </Form.Item>
-          <Form.Item name="branch" label="Operational Zone">
-            <Input />
-          </Form.Item>
-          <Button type="primary" htmlType="submit" loading={editLoading} block>
-            Save Changes
-          </Button>
-        </Form>
-      </Modal>
-    </div>
-  );
-};
-
-export default Riders;
+                    {[

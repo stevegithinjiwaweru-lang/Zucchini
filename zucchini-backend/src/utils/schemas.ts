@@ -36,8 +36,9 @@ export const createOrderSchema = z.object({
   // Accept flat lat/lng as aliases (frontend sometimes sends lat/lng)
   lat: coerceNumber(z.number().optional()),
   lng: coerceNumber(z.number().optional()),
-  // Require external/order number provided by dispatchers when creating an order
-  externalId: z.string().min(1),
+  // Accept either externalId or orderNumber (alias) from clients.
+  externalId: z.string().min(1).optional(),
+  orderNumber: z.string().min(1).optional(),
   amount: coerceNumber(z.number().nonnegative().default(0)),
   paymentType: z.enum(["COD", "PREPAID"]).default("COD"),
   scheduledAt: z.string().datetime().optional().nullable(),
@@ -56,6 +57,22 @@ export const updateOrderStatusSchema = z.object({
   ]),
 });
 
+// New: update order schema for PUT /orders/:id
+export const updateOrderSchema = z.object({
+  customerName: z.string().min(1).optional(),
+  phone: z.string().min(6).optional(),
+  address: z.string().min(1).optional(),
+  destination: z.string().optional(),
+  notes: z.string().optional(),
+  scheduledAt: z.string().datetime().optional().nullable(),
+  paymentType: z.enum(["COD", "PREPAID"]).optional(),
+  status: z
+    .enum(["NEW", "ASSIGNED", "PICKED_UP", "IN_TRANSIT", "DELIVERED", "FAILED", "RETURNED"])
+    .optional(),
+  externalId: z.string().min(1).optional(),
+  orderNumber: z.string().min(1).optional(),
+});
+
 export const assignOrderSchema = z.object({
   riderId: z.string().min(1),
 });
@@ -68,9 +85,12 @@ export const createRiderSchema = z.object({
   bikeReg: z.string().optional(),
   vehicleType: z.string().optional(),
   branch: z.string().optional(),
-  password: z.string().min(4).optional(), // if provided, creates a login for the rider app
+  // Require password for rider creation (dispatcher must set this).
+  password: z.string().min(6),
+  confirmPassword: z.string().min(6),
 });
 
+// For updateRider allow partials (keep existing behavior)
 export const updateRiderSchema = createRiderSchema.partial();
 
 export const riderLocationSchema = z.object({

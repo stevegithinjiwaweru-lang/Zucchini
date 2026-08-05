@@ -40,40 +40,62 @@ export const listRiders = asyncHandler(async (req: AuthedRequest, res: Response)
 export const createRider = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = createRiderSchema.parse(req.body);
 
-  const rider = await prisma.rider.create({
-    data: {
-      name: body.name,
-      phone: body.phone,
-      nationalId: body.nationalId,
-      drivingLicenceNo: body.drivingLicenceNo,
-      bikeReg: body.bikeReg,
-      vehicleType: body.vehicleType,
-      branch: body.branch,
-      status: "OFFLINE",
-    },
-  });
-
-  // Optionally provision a login for the rider (e.g. for a future rider mobile app).
-  if (body.password) {
-    const passwordHash = await hashPassword(body.password);
-    await prisma.user.create({
-      data: { name: body.name, phone: body.phone, passwordHash, role: "RIDER", riderId: rider.id },
-    });
+  // Validate password/confirm and uniqueness
+  if (body.password !== body.confirmPassword) {
+    throw new ApiError(400, "Password and confirm password do not match");
   }
 
-  // `rider` is included alongside `data` for compatibility with the
-  // frontend's riders.service.ts, which reads response.data.rider.
+  const existingUser = await prisma.user.findUnique({ where: { phone: body.phone } });
+  if (existingUser) throw new ApiError(409, "A user with that phone number already exists");
+  const existingRider = await prisma.rider.findUnique({ where: { phone: body.phone } });
+  if (existingRider) throw new ApiError(409, "A rider with that phone number already exists");
+
+  const passwordHash = await hashPassword(body.password);
+
+  // Create rider and linked user in a transaction
+  const rider = await prisma.$transaction(async (tx) => {
+    const r = await tx.rider.create({
+      data: {
+        name: body.name,
+        phone: body.phone,
+        nationalId: body.nationalId,
+        drivingLicenceNo: body.drivingLicenceNo,
+        bikeReg: body.bikeReg,
+        vehicleType: body.vehicleType,
+        branch: body.branch,
+        status: "OFFLINE",
+      },
+    });
+
+    await tx.user.create({
+      data: { name: body.name, phone: body.phone, passwordHash, role: "RIDER", riderId: r.id },
+    });
+
+    return r;
+  });
+
   res.status(201).json({ ok: true, data: serializeRider(rider), rider: serializeRider(rider) });
 });
 
 export const updateRider = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { id } = req.params;
-  const body = updateRiderSchema.parse(req.body);
-  const { password, ...rest } = body;
+  const body = updateRiderSchema.parse(req.body) as any;
+  const password = body.password;
+  const rest = Object.fromEntries(Object.entries(body).filter(([k]) => k !== "password"));
 
   const rider = await prisma.rider.update({ where: { id }, data: rest }).catch(() => {
     throw new ApiError(404, "Rider not found");
   });
+
+  if (password) {
+    const passwordHash = await hashPassword(password);
+    const user = await prisma.user.findUnique({ where: { phone: rider.phone } });
+    if (user) {
+      await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+    } else {
+      await prisma.user.create({ data: { name: rider.name, phone: rider.phone, passwordHash, role: "RIDER", riderId: rider.id } });
+    }
+  }
 
   res.json({ ok: true, data: serializeRider(rider), rider: serializeRider(rider) });
 });

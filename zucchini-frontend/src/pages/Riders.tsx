@@ -383,3 +383,85 @@ const Riders: React.FC = () => {
                     )}
 
                     {[
+                      <Button key="suspend" onClick={() => setStatus(rider, "SUSPENDED")}>Suspend</Button>,
+                      <Button key="offline" onClick={() => setStatus(rider, "OFFLINE")}>Set Offline</Button>,
+                      <Button key="delete" icon={<DeleteOutlined />} danger onClick={() => confirmDelete(rider)}>Delete</Button>,
+                    ]}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <Empty description="No riders found" />
+        )}
+      </Card>
+
+      {/* Add/Edit/Assign/Profile modals (skeletons) */}
+      <Modal open={addOpen} title="Add Rider" onCancel={() => setAddOpen(false)} footer={null}>
+        <Form form={form} onFinish={addRider} layout="vertical">
+          <Form.Item name="name" label="Name" rules={[{ required: true }]}> 
+            <Input placeholder="Name" />
+          </Form.Item>
+          <Form.Item name="phone" label="Phone" rules={[{ required: true }]}> 
+            <Input placeholder="Phone" />
+          </Form.Item>
+          <Form.Item name="password" label="Password" rules={[{ required: true }]}> 
+            <Input.Password />
+          </Form.Item>
+          <Form.Item name="confirmPassword" label="Confirm password" dependencies={["password"]} rules={[{ required: true, message: 'Please confirm password' }]}>
+            <Input.Password />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={addLoading}>
+              Create
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal open={!!editRider} title="Edit Rider" onCancel={() => setEditRider(null)} footer={null}>
+        <Form form={editForm} onFinish={submitEdit} layout="vertical">
+          <Form.Item name="name" label="Name" rules={[{ required: true }]}> 
+            <Input />
+          </Form.Item>
+          <Form.Item name="phone" label="Phone"> 
+            <Input />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={editLoading}>
+              Save
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={!!assignRider}
+        title={assignRider ? `Assign order to ${assignRider.name}` : 'Assign Order'}
+        onOk={confirmAssign}
+        onCancel={() => { setAssignRider(null); setAssignOrderId(null); }}
+      >
+        <Select
+          value={assignOrderId ?? undefined}
+          onChange={(v) => setAssignOrderId(v)}
+          style={{ width: '100%' }}
+          options={unassignedOrders.map((o) => ({ label: o.externalId || o.id, value: o.id }))}
+        />
+      </Modal>
+
+      <Modal open={!!profileRider} title="Rider Profile" onCancel={() => setProfileRider(null)} footer={null}>
+        {profileRider ? (
+          <div>
+            <p><strong>{profileRider.name}</strong></p>
+            <p>{profileRider.phone}</p>
+            <p>Vehicle: {profileRider.vehicleType || '—'}</p>
+            <p>Branch: {profileRider.branch || '—'}</p>
+          </div>
+        ) : null}
+      </Modal>
+    </div>
+  );
+};
+
+export default Riders;

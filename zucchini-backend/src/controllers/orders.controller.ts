@@ -219,4 +219,118 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
   }
 });
 
-// ... rest unchanged
+// --- BEGIN: Added handlers to satisfy routes and provide basic behavior ---
+
+// Permanently delete an order
+export const deleteOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const { id } = req.params;
+  try {
+    const order = await prisma.order.delete({ where: { id } });
+    getIO()?.emit("order:deleted", augmentOrder(order));
+    res.json({ ok: true });
+  } catch (e: any) {
+    // Prisma delete for non-existent record throws P2025
+    if (e?.code === "P2025") throw new ApiError(404, "Order not found");
+    throw e;
+  }
+});
+
+// Assign an order to a rider
+export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const { id } = req.params;
+  const body = assignOrderSchema.parse(req.body) as any; // { riderId: string }
+  const update = {
+    riderId: body.riderId,
+    status: "ASSIGNED",
+  };
+  const order = await prisma.order.update({ where: { id }, data: update }).catch(() => {
+    throw new ApiError(404, "Order not found");
+  });
+  const augmented = augmentOrder(order);
+  getIO()?.emit("order:assigned", augmented);
+  res.json({ ok: true, data: augmented });
+});
+
+// Unassign an order from a rider
+export const unassignOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const { id } = req.params;
+  const order = await prisma.order.update({ where: { id }, data: { riderId: null, status: "NEW" } }).catch(() => {
+    throw new ApiError(404, "Order not found");
+  });
+  const augmented = augmentOrder(order);
+  getIO()?.emit("order:unassigned", augmented);
+  res.json({ ok: true, data: augmented });
+});
+
+// Update order status (PATCH /:id/status)
+export const updateOrderStatus = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const { id } = req.params;
+  const body = updateOrderStatusSchema.parse(req.body) as any; // { status: string }
+  const order = await prisma.order.update({ where: { id }, data: { status: body.status } }).catch(() => {
+    throw new ApiError(404, "Order not found");
+  });
+  const augmented = augmentOrder(order);
+  getIO()?.emit("order:status:update", augmented);
+  res.json({ ok: true, data: augmented });
+});
+
+// Create WhatsApp order (minimal behavior: similar to createOrder but source=WHATSAPP)
+export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const body = whatsappOrderSchema.parse(req.body) as any;
+
+  // Accept orderNumber alias
+  if (!body.externalId && body.orderNumber) body.externalId = body.orderNumber;
+
+  if (!body.externalId) {
+    throw new ApiError(400, "externalId (order number) is required for WhatsApp orders");
+  }
+
+  const already = await prisma.order.findUnique({ where: { externalId: body.externalId } });
+  if (already) {
+    throw new ApiError(409, "An order with that order number already exists");
+  }
+
+  const orderData: any = {
+    customerName: body.customerName,
+    phone: body.phone,
+    address: body.address,
+    destination: body.destination,
+    amount: body.amount,
+    paymentType: body.paymentType,
+    scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
+    notes: body.notes,
+    status: "NEW",
+    source: "WHATSAPP",
+    externalId: body.externalId,
+  };
+
+  try {
+    const order = await prisma.order.create({ data: orderData });
+    getIO()?.emit("order:created", augmentOrder(order));
+    res.status(201).json({ ok: true, data: augmentOrder(order) });
+  } catch (e: any) {
+    if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
+      throw new ApiError(409, "An order with that order number already exists");
+    }
+    throw e;
+  }
+});
+
+// Bulk CSV upload (stub for now)
+export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  // multer attached file is req.file
+  if (!req.file) throw new ApiError(400, "file is required");
+  // parseCsv is available; you could implement parsing + createMany here.
+  // For now, return 501 to indicate not implemented.
+  res.status(501).json({ ok: false, error: "bulkUploadCsv not implemented on server yet" });
+});
+
+// Upload proof-of-delivery (stub for now)
+export const uploadPod = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  // multer attached file is req.file
+  if (!req.file) throw new ApiError(400, "file is required");
+  // Implement saving to storage and updating order.podUrl
+  res.status(501).json({ ok: false, error: "uploadPod not implemented yet" });
+});
+
+// --- END: Added handlers

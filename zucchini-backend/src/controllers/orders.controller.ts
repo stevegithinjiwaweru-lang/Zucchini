@@ -6,6 +6,7 @@ import {
   updateOrderStatusSchema,
   assignOrderSchema,
   whatsappOrderSchema,
+  updateOrderSchema,
 } from "../utils/schemas";
 import { AuthedRequest } from "../middleware/auth";
 import { getIO } from "../socket";
@@ -19,6 +20,12 @@ function normalizeStatusFilter(status?: string) {
   if (!status) return undefined;
   if (status === "PENDING") return "NEW";
   return status;
+}
+
+// Helper to add orderNumber alias to order object
+function augmentOrder(order: any) {
+  if (!order) return order;
+  return { ...order, orderNumber: order.externalId ?? null };
 }
 
 // Try to find or create the default merchant, but fail gracefully if the
@@ -81,7 +88,8 @@ export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response)
     prisma.order.count({ where }),
   ]);
 
-  res.json({ ok: true, data: orders, items: orders, total, page, limit });
+  const mapped = orders.map(augmentOrder);
+  res.json({ ok: true, data: mapped, items: mapped, total, page, limit });
 });
 
 export const getMyOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {
@@ -90,7 +98,7 @@ export const getMyOrders = asyncHandler(async (req: AuthedRequest, res: Response
     where: { riderId: req.user.riderId, status: { in: ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"] } },
     orderBy: { createdAt: "desc" },
   });
-  res.json({ ok: true, data: orders });
+  res.json({ ok: true, data: orders.map(augmentOrder) });
 });
 
 export const getOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
@@ -98,13 +106,16 @@ export const getOrder = asyncHandler(async (req: AuthedRequest, res: Response) =
     where: { id: req.params.id },
   });
   if (!order) throw new ApiError(404, "Order not found");
-  res.json({ ok: true, data: order });
+  res.json({ ok: true, data: augmentOrder(order) });
 });
 
 // Manual order creation from the Dispatch page — pickup/destination coordinates
 // come from the frontend's map-based LocationPicker.
 export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = createOrderSchema.parse(req.body);
+
+  // Accept orderNumber alias
+  if (!body.externalId && (body as any).orderNumber) (body as any).externalId = (body as any).orderNumber;
 
   // externalId MUST be provided by the caller for manual orders. We don't
   // generate server-side order numbers to avoid surprises — dispatchers and
@@ -160,8 +171,8 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
   try {
     const order = await prisma.order.create({ data: orderData });
 
-    getIO()?.emit("order:created", order);
-    res.status(201).json({ ok: true, data: order, order });
+    getIO()?.emit("order:created", augmentOrder(order));
+    res.status(201).json({ ok: true, data: augmentOrder(order), order: augmentOrder(order) });
   } catch (e: any) {
     if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
       throw new ApiError(409, "An order with that order number already exists");
@@ -177,6 +188,9 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
 // can break down order volume by channel (Shopify vs WhatsApp vs manual).
 export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = whatsappOrderSchema.parse(req.body);
+
+  // Accept orderNumber alias
+  if (!body.externalId && (body as any).orderNumber) (body as any).externalId = (body as any).orderNumber;
 
   // WhatsApp orders must include an externalId provided by the dispatcher
   if (!body.externalId) {
@@ -226,8 +240,8 @@ export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: 
   try {
     const order = await prisma.order.create({ data: orderData });
 
-    getIO()?.emit("order:created", order);
-    res.status(201).json({ ok: true, data: order });
+    getIO()?.emit("order:created", augmentOrder(order));
+    res.status(201).json({ ok: true, data: augmentOrder(order) });
   } catch (e: any) {
     if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
       throw new ApiError(409, "An order with that order number already exists");
@@ -256,8 +270,8 @@ export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response
 
   await prisma.rider.update({ where: { id: riderId }, data: { status: "BUSY" } });
 
-  getIO()?.emit("order:updated", order);
-  res.json({ ok: true, data: order });
+  getIO()?.emit("order:updated", augmentOrder(order));
+  res.json({ ok: true, data: augmentOrder(order) });
 });
 
 // Unassign rider from order (used by frontend RemoveRiderDialog)
@@ -287,10 +301,10 @@ export const unassignOrder = asyncHandler(async (req: AuthedRequest, res: Respon
     }
   }
 
-  getIO()?.emit("order:updated", order);
-  getIO()?.emit("order:unassigned", order);
+  getIO()?.emit("order:updated", augmentOrder(order));
+  getIO()?.emit("order:unassigned", augmentOrder(order));
 
-  res.json({ ok: true, data: order });
+  res.json({ ok: true, data: augmentOrder(order) });
 });
 
 // Advance an order's status (Picked Up/In Transit/Delivered/Failed). Used by
@@ -338,8 +352,8 @@ export const updateOrderStatus = asyncHandler(async (req: AuthedRequest, res: Re
     }
   }
 
-  getIO()?.emit("order:updated", order);
-  res.json({ ok: true, data: order });
+  getIO()?.emit("order:updated", augmentOrder(order));
+  res.json({ ok: true, data: augmentOrder(order) });
 });
 
 // Permanently delete an order — used by the Dispatch board's "Delete" action.
@@ -413,7 +427,7 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
         throw new Error(`Order number ${externalId} already exists`);
       }
 
-      await prisma.order.create({
+      const created = await prisma.order.create({
         data: {
           merchantId: merchant?.id ?? undefined,
           customerName: row.customername,
@@ -432,6 +446,8 @@ export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Respon
         },
       });
       imported++;
+      // emit each created with augment
+      getIO()?.emit("order:created", augmentOrder(created));
     } catch (e: any) {
       errors.push({ row: i + 2, error: e.message }); // +2: header row + 1-indexing
     }
@@ -462,7 +478,7 @@ export const uploadPod = asyncHandler(async (req: AuthedRequest, res: Response) 
       throw new ApiError(404, "Order not found");
     });
 
-    res.json({ ok: true, data: order });
+    res.json({ ok: true, data: augmentOrder(order) });
   } catch (e: any) {
     console.error("uploadPod failed:", (e && e.message) || e, { orderId: req.params.id, podUrl });
     throw e;

@@ -280,12 +280,17 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
     getIO()?.emit("order:created", serialized);
     emitDashboard();
     res.status(201).json({ ok: true, data: serialized, order: serialized });
-  } catch (e: any) {
+   } catch (e: any) {
+    console.error("CREATE ORDER ERROR FULL:", e);
+
     if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
       throw new ApiError(409, "Order number already exists.");
     }
-    console.error("createOrder failed:", e?.message || e);
-    throw e;
+
+    throw new ApiError(
+      500,
+      e?.message || "Failed to create order"
+    );
   }
 });
 

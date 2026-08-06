@@ -34,18 +34,7 @@ async function ensureUser(opts: {
   return user;
 }
 
-async function nextRiderCode(): Promise<string> {
-  const riders = await prisma.rider.findMany({
-    where: { code: { startsWith: "RD" } },
-    select: { code: true },
-  });
-  let max = 0;
-  for (const r of riders) {
-    const m = r.code?.match(/^RD(\d+)$/);
-    if (m) max = Math.max(max, parseInt(m[1], 10));
-  }
-  return `RD${String(max + 1).padStart(3, "0")}`;
-}
+
 
 async function ensureRider(opts: {
   name: string;
@@ -67,17 +56,27 @@ async function ensureRider(opts: {
     return existing;
   }
 
-  const code = await nextRiderCode();
   const rider = await prisma.rider.create({
-    data: {
-      code,
-      name: opts.name,
-      phone: opts.phone,
-      vehicleType: opts.vehicleType || "Motorcycle",
-      branch: opts.branch || "Nairobi",
-      status: "AVAILABLE",
-    },
-  });
+  data: {
+    name: opts.name,
+    phone: opts.phone,
+    vehicleType: opts.vehicleType || "Motorcycle",
+    branch: opts.branch || "Nairobi",
+    status: "AVAILABLE",
+  },
+});
+
+await ensureUser({
+  name: opts.name,
+  phone: opts.phone,
+  password: opts.password,
+  role: "RIDER",
+  riderId: rider.id,
+});
+
+console.log(`  Rider ${opts.name} (${opts.phone}) / ${opts.password}`);
+
+return rider;
 
   await ensureUser({
     name: opts.name,
@@ -87,7 +86,7 @@ async function ensureRider(opts: {
     riderId: rider.id,
   });
 
-  console.log(`  Rider ${code} ${opts.name} (${opts.phone}) / ${opts.password}`);
+  console.log(`  Rider ${opts.name} (${opts.phone}) / ${opts.password}`);
   return rider;
 }
 

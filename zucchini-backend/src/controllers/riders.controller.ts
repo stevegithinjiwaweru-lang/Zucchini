@@ -9,9 +9,8 @@ import { writeAudit } from "../services/audit.service";
 
 function serializeRider(rider: any) {
   return {
-    id: rider.id,
-    code: rider.code ?? null,
-    name: rider.name,
+  id: rider.id,
+  name: rider.name,
     phone: rider.phone,
     nationalId: rider.nationalId ?? undefined,
     drivingLicenceNo: rider.drivingLicenceNo ?? undefined,
@@ -29,18 +28,7 @@ function serializeRider(rider: any) {
   };
 }
 
-async function nextRiderCode(): Promise<string> {
-  const riders = await prisma.rider.findMany({
-    where: { code: { startsWith: "RD" } },
-    select: { code: true },
-  });
-  let max = 0;
-  for (const r of riders) {
-    const m = r.code?.match(/^RD(\d+)$/);
-    if (m) max = Math.max(max, parseInt(m[1], 10));
-  }
-  return `RD${String(max + 1).padStart(3, "0")}`;
-}
+
 
 export const listRiders = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const limit = Math.min(parseInt(String(req.query.limit || "200"), 10) || 200, 500);
@@ -86,13 +74,12 @@ export const createRider = asyncHandler(async (req: AuthedRequest, res: Response
     if (dup) throw new ApiError(409, "Driving licence already belongs to another rider.");
   }
 
-  const passwordHash = await hashPassword(body.password);
-  const code = await nextRiderCode();
+const passwordHash = await hashPassword(body.password);
 
   const rider = await prisma.$transaction(async (tx: any) => {
     const r = await tx.rider.create({
       data: {
-        code,
+      
         name: body.name,
         phone: body.phone,
         nationalId: body.nationalId || null,

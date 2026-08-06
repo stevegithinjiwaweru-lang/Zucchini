@@ -12,7 +12,7 @@ export function serializeOrder(order: any) {
           id: order.rider.id,
           name: order.rider.name,
           phone: order.rider.phone,
-          code: order.rider.code ?? null,
+          
           status: order.rider.status,
         }
       : order.riderId

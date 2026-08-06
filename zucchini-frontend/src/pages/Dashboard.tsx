@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect } from "react";
 import { Card, Row, Col, Tag, Spin } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -15,6 +15,7 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
 import { Link } from "react-router-dom";
 import client from "../api/client";
+import { getSocket } from "../services/socket";
 import StatCard from "../components/dashboard/StatCard";
 import DonutChart, { DonutSlice } from "../components/dashboard/DonutChart";
 import { CATEGORICAL, STATUS } from "../theme/palette";
@@ -71,6 +72,37 @@ const Dashboard: React.FC = () => {
     queryKey: ["dashboard-dispatches"],
     queryFn: async () => (await client.get("/dispatches")).data,
   });
+
+  const { data: liveStatsData, refetch: refetchLiveStats } = useQuery({
+    queryKey: ["dashboard-live-stats"],
+    queryFn: async () => (await client.get("/orders/stats/dashboard")).data,
+    refetchInterval: 30000,
+  });
+  const live = liveStatsData?.data || liveStatsData || {};
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const refresh = () => {
+      refetchLiveStats();
+    };
+    socket.on("dashboard.updated", refresh);
+    socket.on("dashboard:updated", refresh);
+    socket.on("order.created", refresh);
+    socket.on("order.updated", refresh);
+    socket.on("order.deleted", refresh);
+    socket.on("order.assigned", refresh);
+    socket.on("order.completed", refresh);
+    return () => {
+      socket.off("dashboard.updated", refresh);
+      socket.off("dashboard:updated", refresh);
+      socket.off("order.created", refresh);
+      socket.off("order.updated", refresh);
+      socket.off("order.deleted", refresh);
+      socket.off("order.assigned", refresh);
+      socket.off("order.completed", refresh);
+    };
+  }, [refetchLiveStats]);
 
   const orders = asList(ordersData, "items");
   const riders = asList(ridersData, "items");
@@ -185,6 +217,22 @@ const Dashboard: React.FC = () => {
 
   return (
     <div>
+      {/* Live production KPIs */}
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Pending Orders" value={live.pendingOrders ?? stats.pending} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Assigned" value={live.assignedOrders ?? 0} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="In Transit" value={live.inTransit ?? 0} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Delivered Today" value={live.deliveredToday ?? stats.deliveredToday} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Cancelled Today" value={live.cancelledToday ?? 0} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Available Riders" value={live.availableRiders ?? 0} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Busy Riders" value={live.busyRiders ?? 0} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Offline Riders" value={live.offlineRiders ?? 0} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Suspended Riders" value={live.suspendedRiders ?? 0} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Avg Delivery (min)" value={live.averageDeliveryTimeMinutes ?? "—"} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Waiting >30 min" value={live.ordersWaitingOver30Minutes ?? 0} /></Col>
+        <Col xs={12} sm={8} md={6} lg={4}><StatCard label="Today's Deliveries" value={live.todaysTotalDeliveries ?? stats.deliveredToday} /></Col>
+      </Row>
+
       {/* Top KPI row */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={5}>
@@ -261,7 +309,7 @@ const Dashboard: React.FC = () => {
                   {orders.length ? (
                     orders.slice(0, 8).map((o: any) => (
                       <tr key={o.id}>
-                        <td>{o.externalId || o.id?.slice(0, 8).toUpperCase()}</td>
+                        <td>{o.orderNumber || o.externalId || '—'}</td>
                         <td>{o.merchant?.name || "N/A"}</td>
                         <td>{o.customerName}</td>
                         <td>KSh {o.amount}</td>

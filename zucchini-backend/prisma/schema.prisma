@@ -55,16 +55,17 @@ enum OrderSource {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  name          String
-  phone         String         @unique
-  passwordHash  String
-  role          Role           @default(DISPATCHER)
-  riderId       String?        @unique
-  rider         Rider?         @relation(fields: [riderId], references: [id])
-  refreshTokens RefreshToken[]
-  forcePasswordChange Boolean    @default(false)
-  createdAt     DateTime       @default(now())
+  id                  String         @id @default(cuid())
+  name                String
+  phone               String         @unique
+  passwordHash        String
+  role                Role           @default(DISPATCHER)
+  riderId             String?        @unique
+  rider               Rider?         @relation(fields: [riderId], references: [id])
+  refreshTokens       RefreshToken[]
+  forcePasswordChange Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  auditLogs           AuditLog[]
 }
 
 model RefreshToken {
@@ -79,14 +80,15 @@ model RefreshToken {
 
 model Rider {
   id               String      @id @default(cuid())
+  code             String?     @unique // RD001, RD002, ...
   name             String
   phone            String      @unique
-  nationalId       String?
-  drivingLicenceNo String?
+  nationalId       String?     @unique
+  drivingLicenceNo String?     @unique
   bikeReg          String?
   vehicleType      String?
   branch           String?
-  status           RiderStatus @default(OFFLINE)
+  status           RiderStatus @default(AVAILABLE)
   lastActiveAt     DateTime?
   lastLat          Float?
   lastLng          Float?
@@ -113,7 +115,7 @@ model Merchant {
 
 model Order {
   id             String      @id @default(cuid())
-  merchantId     String?     // made nullable in preparation for removing Merchant dependency
+  merchantId     String?
   merchant       Merchant?   @relation(fields: [merchantId], references: [id])
   customerName   String
   phone          String
@@ -133,10 +135,40 @@ model Order {
   riderId        String?
   rider          Rider?      @relation(fields: [riderId], references: [id])
   source         OrderSource @default(MANUAL)
-  externalId     String?     @unique
+  externalId     String?     @unique // permanent dispatcher order number
   notes          String?
   podUrl         String?
+  // Soft delete
+  isDeleted      Boolean     @default(false)
+  deletedAt      DateTime?
+  deletedBy      String?
+  // Legacy migration flag
+  needsOrderNumberReview Boolean @default(false)
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
   deliveredAt    DateTime?
+
+  @@index([isDeleted, status])
+  @@index([externalId])
+  @@index([phone])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
+  username     String?
+  action       String
+  entityType   String
+  entityId     String?
+  previousValues Json?
+  newValues    Json?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
 }

@@ -16,7 +16,7 @@ const coerceNumber = (schema: z.ZodTypeAny) =>
 
 export const loginSchema = z.object({
   phone: z.string().min(6),
-  password: z.string().min(4),
+  password: z.string().min(1),
 });
 
 export const refreshSchema = z.object({
@@ -77,17 +77,30 @@ export const assignOrderSchema = z.object({
   riderId: z.string().min(1),
 });
 
+// Kenyan phone: 07xxxxxxxx, 01xxxxxxxx, +2547..., +2541..., 2547...
+const kenyanPhone = z
+  .string()
+  .min(9, "Enter a valid Kenyan phone number")
+  .refine(
+    (v) => {
+      const digits = v.replace(/[\s-]/g, "");
+      return /^(?:\+?254|0)?[17]\d{8}$/.test(digits);
+    },
+    { message: "Phone must be a valid Kenyan mobile number (e.g. 07xx xxx xxx)" }
+  );
+
 export const createRiderSchema = z.object({
   name: z.string().min(1),
-  phone: z.string().min(6),
-  nationalId: z.string().optional(),
-  drivingLicenceNo: z.string().optional(),
+  phone: kenyanPhone,
+  nationalId: z.string().min(5).optional().or(z.literal("")).transform((v) => v || undefined),
+  drivingLicenceNo: z.string().min(3).optional().or(z.literal("")).transform((v) => v || undefined),
   bikeReg: z.string().optional(),
   vehicleType: z.string().optional(),
   branch: z.string().optional(),
   // Require password for rider creation (dispatcher must set this).
-  password: z.string().min(6),
-  confirmPassword: z.string().min(6),
+  // Minimum 8 characters; hashed with bcrypt before storage.
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  confirmPassword: z.string().min(8, "Password must be at least 8 characters"),
 });
 
 // For updateRider allow partials (keep existing behavior)

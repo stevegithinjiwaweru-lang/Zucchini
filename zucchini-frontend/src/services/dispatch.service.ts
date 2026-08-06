@@ -85,3 +85,13 @@ export const createOrder = async (
 
   return response.data;
 };
+
+
+/**
+ * Create order transcribed from WhatsApp
+ * Backend: POST /api/orders/whatsapp
+ */
+export const createWhatsappOrder = async (payload: any) => {
+  const response = await client.post("/orders/whatsapp", payload);
+  return response.data;
+};

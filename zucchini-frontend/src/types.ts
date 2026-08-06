@@ -32,7 +32,9 @@ export type PaymentType = "COD" | "PREPAID";
 
 export type Order = {
   id: string;
-  externalId?: string | null; // dispatcher-provided order number (shown to users instead of the system id)
+  /** Permanent dispatcher-provided order number (stored as externalId in DB) */
+  orderNumber?: string | null;
+  externalId?: string | null; // alias of orderNumber
   merchantId?: string | null; // made optional to match backend changes
   merchant?: Merchant;
   customerName: string;

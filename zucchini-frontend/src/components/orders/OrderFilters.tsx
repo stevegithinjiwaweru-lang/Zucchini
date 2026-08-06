@@ -6,7 +6,7 @@ import client from "../../api/client";
 const { RangePicker } = DatePicker;
 
 const OrderFilters: React.FC<{ filters: any; onChange: (patch: any) => void }> = ({ filters, onChange }) => {
-  const { data: merchantsData } = useQuery({ queryKey: ["merchants"], queryFn: async () => (await client.get('/merchants')).data });
+  const { data: merchantsData } = useQuery({ queryKey: ["merchants"], queryFn: async () => { try { return (await client.get('/merchants')).data; } catch { return []; } } });
   const { data: ridersData } = useQuery({ queryKey: ["riders"], queryFn: async () => (await client.get('/riders', { params: { limit: 200 } })).data });
 
   const merchants = merchantsData?.items || merchantsData || [];

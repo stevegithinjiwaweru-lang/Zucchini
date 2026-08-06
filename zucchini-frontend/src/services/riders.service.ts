@@ -65,7 +65,10 @@ export const getRiders = async (): Promise<Rider[]> => {
       endpoints.riders.getAll
     );
 
-    return Array.isArray(data.items) ? data.items : [];
+    if (Array.isArray(data)) return data;
+    if (Array.isArray((data as any)?.items)) return (data as any).items;
+    if (Array.isArray((data as any)?.data)) return (data as any).data;
+    return [];
   } catch (error) {
     console.error("Failed to fetch riders:", error);
     throw error;
@@ -81,7 +84,7 @@ export const createRider = async (
       payload
     );
 
-    return data.rider;
+    return (data as any).rider || (data as any).data || data;
   } catch (error) {
     console.error("Failed to create rider:", error);
     throw error;
@@ -98,7 +101,7 @@ export const updateRider = async (
       payload
     );
 
-    return data.rider;
+    return (data as any).rider || (data as any).data || data;
   } catch (error) {
     console.error("Failed to update rider:", error);
     throw error;

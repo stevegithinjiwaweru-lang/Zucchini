@@ -10,27 +10,36 @@ import {
 } from "../utils/schemas";
 import { AuthedRequest } from "../middleware/auth";
 import { getIO } from "../socket";
+import { OrderStatus } from "../types/enums";
+import {
+  serializeOrder,
+  isOrderNumberLocked,
+  MAX_ACTIVE_DELIVERIES,
+  ACTIVE_ORDER_STATUSES,
+} from "../utils/orderSerializer";
+import { writeAudit } from "../services/audit.service";
 import { parseCsv } from "../utils/csv";
-import { OrderStatus } from "@prisma/client";
 
-// The frontend's dispatch board currently queries status=PENDING, which isn't
-// one of our real statuses (NEW/ASSIGNED/.../RETURNED). We treat PENDING as an
-// alias for NEW so unassigned orders still show up — see README for the
-// one-line frontend fix to send NEW directly instead.
 function normalizeStatusFilter(status?: string) {
   if (!status) return undefined as OrderStatus | undefined;
   if (status === "PENDING") return OrderStatus.NEW;
   return status as OrderStatus;
 }
 
-// Helper to add orderNumber alias to order object
-function augmentOrder(order: any) {
-  if (!order) return order;
-  return { ...order, orderNumber: order.externalId ?? null };
+/** Soft-delete filter: hide deleted unless includeDeleted=true */
+function baseWhere(req: AuthedRequest) {
+  const includeDeleted = String(req.query.includeDeleted || "") === "true";
+  if (includeDeleted && (req.user?.role === "ADMIN" || req.user?.role === "DISPATCHER")) {
+    return {} as any;
+  }
+  return { isDeleted: false } as any;
 }
 
-// Try to find or create the default merchant, but fail gracefully if the
-// database doesn't have the Merchant table or migrations aren't applied yet.
+function emitDashboard() {
+  getIO()?.emit("dashboard.updated", { at: new Date().toISOString() });
+  getIO()?.emit("dashboard:updated", { at: new Date().toISOString() });
+}
+
 async function getOrCreateDefaultMerchant() {
   try {
     let merchant = await prisma.merchant.findFirst();
@@ -41,34 +50,37 @@ async function getOrCreateDefaultMerchant() {
     }
     return merchant;
   } catch (e) {
-    // Log and return undefined so callers can continue without a merchant.
-    console.warn("Merchant lookup/creation failed, continuing without merchant:", (e as any)?.message || e);
+    console.warn("Merchant lookup/creation failed:", (e as any)?.message || e);
     return undefined as any;
   }
 }
 
 export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {
-  const { status, riderId, merchantId, source, search, orderNo, dateFrom, dateTo } =
+  const { status, riderId, merchantId, source, search, orderNo, dateFrom, dateTo, onlyDeleted } =
     req.query as Record<string, string>;
   const limit = Math.min(parseInt(String(req.query.limit || "50"), 10) || 50, 200);
   const page = Math.max(parseInt(String(req.query.page || "1"), 10) || 1, 1);
 
-  const where: any = {};
+  const where: any = { ...baseWhere(req) };
+  if (onlyDeleted === "true") {
+    where.isDeleted = true;
+  }
+
   const normalizedStatus = normalizeStatusFilter(status);
   if (normalizedStatus) where.status = normalizedStatus;
   if (riderId) where.riderId = riderId;
   if (merchantId) where.merchantId = merchantId;
   if (source) where.source = source;
 
-  // Search by the dispatcher's own order number (externalId) or customer
-  // name — "orderNo" and "search" are treated as the same free-text query,
-  // since the frontend sends both.
   const q = (search || orderNo || "").trim();
   if (q) {
     where.OR = [
       { externalId: { contains: q, mode: "insensitive" } },
       { customerName: { contains: q, mode: "insensitive" } },
       { phone: { contains: q, mode: "insensitive" } },
+      { address: { contains: q, mode: "insensitive" } },
+      { destination: { contains: q, mode: "insensitive" } },
+      { rider: { name: { contains: q, mode: "insensitive" } } },
     ];
   }
 
@@ -84,43 +96,79 @@ export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response)
       take: limit,
       skip: (page - 1) * limit,
       orderBy: { createdAt: "desc" },
-      // Avoid joining merchant to be resilient if Merchant table isn't present.
+      include: { rider: true },
     }),
     prisma.order.count({ where }),
   ]);
 
-  const mapped = orders.map(augmentOrder);
+  const mapped = orders.map(serializeOrder);
   res.json({ ok: true, data: mapped, items: mapped, total, page, limit });
 });
 
 export const getMyOrders = asyncHandler(async (req: AuthedRequest, res: Response) => {
   if (!req.user?.riderId) throw new ApiError(400, "This account is not linked to a rider");
+
+  // scope: active (default) | completed | all
+  const scope = String(req.query.scope || "all").toLowerCase();
+  const ACTIVE = [OrderStatus.ASSIGNED, OrderStatus.PICKED_UP, OrderStatus.IN_TRANSIT];
+  const COMPLETED = [OrderStatus.DELIVERED, OrderStatus.FAILED, OrderStatus.RETURNED];
+
+  let statuses: OrderStatus[];
+  if (scope === "active") statuses = ACTIVE;
+  else if (scope === "completed") statuses = COMPLETED;
+  else statuses = [...ACTIVE, ...COMPLETED];
+
+  const limit = Math.min(parseInt(String(req.query.limit || "100"), 10) || 100, 200);
+
   const orders = await prisma.order.findMany({
-    where: { riderId: req.user.riderId, status: { in: [OrderStatus.ASSIGNED, OrderStatus.PICKED_UP, OrderStatus.IN_TRANSIT] } },
-    orderBy: { createdAt: "desc" },
+    where: {
+      isDeleted: false,
+      riderId: req.user.riderId,
+      status: { in: statuses },
+    },
+    orderBy: [{ deliveredAt: "desc" }, { updatedAt: "desc" }, { createdAt: "desc" }],
+    take: limit,
+    include: { rider: true },
   });
-  res.json({ ok: true, data: orders.map(augmentOrder) });
+
+  const data = orders.map(serializeOrder);
+  res.json({
+    ok: true,
+    data,
+    items: data,
+    active: data.filter((o: any) => ACTIVE.includes(o.status)),
+    completed: data.filter((o: any) => COMPLETED.includes(o.status)),
+  });
 });
 
 export const getOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
-  const order = await prisma.order.findUnique({
-    where: { id: req.params.id },
+  const order = await prisma.order.findFirst({
+    where: { id: req.params.id, ...baseWhere(req) },
+    include: { rider: true },
   });
   if (!order) throw new ApiError(404, "Order not found");
-  res.json({ ok: true, data: augmentOrder(order) });
+  res.json({ ok: true, data: serializeOrder(order) });
 });
 
-// Update order (safe partial updates)
 export const updateOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { id } = req.params;
   const body = updateOrderSchema.parse(req.body) as any;
 
-  // Map alias
   if (!body.externalId && body.orderNumber) body.externalId = body.orderNumber;
 
-  if (body.externalId) {
-    const existing = await prisma.order.findUnique({ where: { externalId: body.externalId } });
-    if (existing && existing.id !== id) throw new ApiError(409, "An order with that order number already exists");
+  const existing = await prisma.order.findFirst({ where: { id, isDeleted: false } });
+  if (!existing) throw new ApiError(404, "Order not found");
+
+  // Lock order number once assigned / past NEW
+  if (body.externalId && body.externalId !== existing.externalId) {
+    if (isOrderNumberLocked(existing.status, !!existing.riderId)) {
+      throw new ApiError(
+        400,
+        "Order number cannot be changed after the order has been assigned or progressed past NEW"
+      );
+    }
+    const dup = await prisma.order.findUnique({ where: { externalId: body.externalId } });
+    if (dup && dup.id !== id) throw new ApiError(409, "Order number already exists.");
   }
 
   const data: any = {
@@ -132,40 +180,52 @@ export const updateOrder = asyncHandler(async (req: AuthedRequest, res: Response
     scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : undefined,
     paymentType: body.paymentType,
     status: body.status as OrderStatus | undefined,
-    externalId: body.externalId,
   };
+
+  // Only allow externalId change when not locked
+  if (body.externalId && !isOrderNumberLocked(existing.status, !!existing.riderId)) {
+    data.externalId = body.externalId;
+    data.needsOrderNumberReview = false;
+  }
 
   const toUpdate = Object.fromEntries(Object.entries(data).filter(([_, v]) => v !== undefined));
 
-  const order = await prisma.order.update({ where: { id }, data: toUpdate }).catch(() => {
-    throw new ApiError(404, "Order not found");
+  const order = await prisma.order.update({
+    where: { id },
+    data: toUpdate,
+    include: { rider: true },
   });
 
-  const augmented = augmentOrder(order);
-  getIO()?.emit("order:updated", augmented);
-  res.json({ ok: true, data: augmented });
+  const serialized = serializeOrder(order);
+  await writeAudit({
+    action: "ORDER_EDITED",
+    entityType: "Order",
+    entityId: id,
+    previousValues: serializeOrder(existing),
+    newValues: serialized,
+    req,
+  });
+
+  getIO()?.emit("order.updated", serialized);
+  getIO()?.emit("order:updated", serialized);
+  emitDashboard();
+  res.json({ ok: true, data: serialized });
 });
 
-// Manual order creation from the Dispatch page — pickup/destination coordinates
-// come from the frontend's map-based LocationPicker.
 export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = createOrderSchema.parse(req.body);
 
-  // Accept orderNumber alias
-  if (!body.externalId && (body as any).orderNumber) (body as any).externalId = (body as any).orderNumber;
-
-  // externalId MUST be provided by the caller for manual orders. We don't
-  // generate server-side order numbers to avoid surprises — dispatchers and
-  // WhatsApp importers must provide their own unique order numbers.
-  if (!body.externalId) {
-    throw new ApiError(400, "externalId (order number) is required for manual orders");
+  if (!body.externalId && (body as any).orderNumber) {
+    (body as any).externalId = (body as any).orderNumber;
   }
 
-  // If caller provided an external/order number, ensure it's not already used
+  if (!body.externalId) {
+    throw new ApiError(400, "Order number is required for manual orders");
+  }
+
   const already = await prisma.order.findUnique({ where: { externalId: body.externalId } });
   if (already) {
-    // 409 Conflict - caller should choose a different order number
-    throw new ApiError(409, "An order with that order number already exists");
+    throw new ApiError(409, "Order number already exists.");
   }
 
   let merchant: any = undefined;
@@ -174,12 +234,10 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
       ? await prisma.merchant.findUnique({ where: { id: body.merchantId } })
       : await getOrCreateDefaultMerchant();
   } catch (e) {
-    // If merchant lookup fails, continue without a merchant.
-    console.warn("Merchant lookup failed during order creation, proceeding without merchant:", (e as any)?.message || e);
+    console.warn("Merchant lookup failed:", (e as any)?.message || e);
     merchant = undefined;
   }
 
-  // Normalize aliases: frontend sometimes sends lat/lng instead of pickupLat/pickupLng
   const pickupLatVal = body.pickupLat ?? body.lat ?? undefined;
   const pickupLngVal = body.pickupLng ?? body.lng ?? undefined;
 
@@ -201,137 +259,485 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
     status: OrderStatus.NEW,
     source: "MANUAL",
     externalId: body.externalId,
+    isDeleted: false,
   };
 
-  if (merchant && merchant.id) orderData.merchantId = merchant.id;
+  if (merchant?.id) orderData.merchantId = merchant.id;
 
   try {
-    const order = await prisma.order.create({ data: orderData });
+    const order = await prisma.order.create({ data: orderData, include: { rider: true } });
+    const serialized = serializeOrder(order);
 
-    getIO()?.emit("order:created", augmentOrder(order));
-    res.status(201).json({ ok: true, data: augmentOrder(order), order: augmentOrder(order) });
+    await writeAudit({
+      action: "ORDER_CREATED",
+      entityType: "Order",
+      entityId: order.id,
+      newValues: serialized,
+      req,
+    });
+
+    getIO()?.emit("order.created", serialized);
+    getIO()?.emit("order:created", serialized);
+    emitDashboard();
+    res.status(201).json({ ok: true, data: serialized, order: serialized });
   } catch (e: any) {
     if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
-      throw new ApiError(409, "An order with that order number already exists");
+      throw new ApiError(409, "Order number already exists.");
     }
-
-    console.error("createOrder failed:", (e && e.message) || e, { orderData });
+    console.error("createOrder failed:", e?.message || e);
     throw e;
   }
 });
 
-// --- BEGIN: Added handlers to satisfy routes and provide basic behavior ---
-
-// Permanently delete an order
+/** Soft delete — keeps the row, hides from normal queries */
 export const deleteOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { id } = req.params;
-  try {
-    const order = await prisma.order.delete({ where: { id } });
-    getIO()?.emit("order:deleted", augmentOrder(order));
-    res.json({ ok: true });
-  } catch (e: any) {
-    // Prisma delete for non-existent record throws P2025
-    if (e?.code === "P2025") throw new ApiError(404, "Order not found");
-    throw e;
-  }
+  const existing = await prisma.order.findFirst({ where: { id, isDeleted: false } });
+  if (!existing) throw new ApiError(404, "Order not found");
+
+  const order = await prisma.order.update({
+    where: { id },
+    data: {
+      isDeleted: true,
+      deletedAt: new Date(),
+      deletedBy: req.user?.id || null,
+    },
+    include: { rider: true },
+  });
+
+  const serialized = serializeOrder(order);
+  await writeAudit({
+    action: "ORDER_DELETED",
+    entityType: "Order",
+    entityId: id,
+    previousValues: serializeOrder(existing),
+    newValues: serialized,
+    req,
+  });
+
+  getIO()?.emit("order.deleted", serialized);
+  getIO()?.emit("order:deleted", serialized);
+  emitDashboard();
+  res.json({ ok: true, data: serialized });
 });
 
-// Assign an order to a rider
+/** Restore soft-deleted order (admin / dispatcher) */
+export const restoreOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
+  const { id } = req.params;
+  const existing = await prisma.order.findFirst({ where: { id, isDeleted: true } });
+  if (!existing) throw new ApiError(404, "Deleted order not found");
+
+  const order = await prisma.order.update({
+    where: { id },
+    data: { isDeleted: false, deletedAt: null, deletedBy: null },
+    include: { rider: true },
+  });
+
+  const serialized = serializeOrder(order);
+  await writeAudit({
+    action: "ORDER_RESTORED",
+    entityType: "Order",
+    entityId: id,
+    previousValues: serializeOrder(existing),
+    newValues: serialized,
+    req,
+  });
+
+  getIO()?.emit("order.restored", serialized);
+  getIO()?.emit("order:restored", serialized);
+  emitDashboard();
+  res.json({ ok: true, data: serialized });
+});
+
 export const assignOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { id } = req.params;
-  const body = assignOrderSchema.parse(req.body) as any; // { riderId: string }
-  const update = {
-    riderId: body.riderId,
-    status: OrderStatus.ASSIGNED,
-  };
-  const order = await prisma.order.update({ where: { id }, data: update }).catch(() => {
-    throw new ApiError(404, "Order not found");
+  const body = assignOrderSchema.parse(req.body) as any;
+
+  const existing = await prisma.order.findFirst({
+    where: { id, isDeleted: false },
+    include: { rider: true },
   });
-  const augmented = augmentOrder(order);
-  getIO()?.emit("order:assigned", augmented);
-  res.json({ ok: true, data: augmented });
+  if (!existing) throw new ApiError(404, "Order not found");
+
+  const rider = await prisma.rider.findUnique({ where: { id: body.riderId } });
+  if (!rider) throw new ApiError(404, "Rider not found");
+
+  if (rider.status === "OFFLINE") {
+    throw new ApiError(400, "Cannot assign order: rider is offline.");
+  }
+  if (rider.status === "SUSPENDED") {
+    throw new ApiError(400, "Cannot assign order: rider is suspended.");
+  }
+
+  const activeCount = await prisma.order.count({
+    where: {
+      riderId: rider.id,
+      isDeleted: false,
+      status: { in: [...ACTIVE_ORDER_STATUSES] },
+    },
+  });
+  if (activeCount >= MAX_ACTIVE_DELIVERIES) {
+    throw new ApiError(
+      400,
+      "Rider has reached the maximum number of active deliveries."
+    );
+  }
+
+  const wasReassign = !!existing.riderId && existing.riderId !== body.riderId;
+
+  const order = await prisma.order.update({
+    where: { id },
+    data: { riderId: body.riderId, status: OrderStatus.ASSIGNED },
+    include: { rider: true },
+  });
+
+  // Mark rider busy when they have active work
+  if (rider.status === "AVAILABLE") {
+    await prisma.rider.update({
+      where: { id: rider.id },
+      data: { status: "BUSY" },
+    }).catch(() => {});
+  }
+
+  const serialized = serializeOrder(order);
+  await writeAudit({
+    action: wasReassign ? "ORDER_REASSIGNED" : "ORDER_ASSIGNED",
+    entityType: "Order",
+    entityId: id,
+    previousValues: serializeOrder(existing),
+    newValues: serialized,
+    req,
+  });
+
+  if (wasReassign) {
+    getIO()?.emit("order.reassigned", serialized);
+    getIO()?.emit("order:reassigned", serialized);
+  }
+  getIO()?.emit("order.assigned", serialized);
+  getIO()?.emit("order:assigned", serialized);
+  emitDashboard();
+  res.json({ ok: true, data: serialized });
 });
 
-// Unassign an order from a rider
 export const unassignOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { id } = req.params;
-  const order = await prisma.order.update({ where: { id }, data: { riderId: null, status: OrderStatus.NEW } }).catch(() => {
-    throw new ApiError(404, "Order not found");
+  const existing = await prisma.order.findFirst({ where: { id, isDeleted: false } });
+  if (!existing) throw new ApiError(404, "Order not found");
+
+  const order = await prisma.order.update({
+    where: { id },
+    data: { riderId: null, status: OrderStatus.NEW },
+    include: { rider: true },
   });
-  const augmented = augmentOrder(order);
-  getIO()?.emit("order:unassigned", augmented);
-  res.json({ ok: true, data: augmented });
+  const serialized = serializeOrder(order);
+  getIO()?.emit("order.updated", serialized);
+  getIO()?.emit("order:unassigned", serialized);
+  emitDashboard();
+  res.json({ ok: true, data: serialized });
 });
 
-// Update order status (PATCH /:id/status)
 export const updateOrderStatus = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const { id } = req.params;
-  const body = updateOrderStatusSchema.parse(req.body) as any; // { status: string }
-  const order = await prisma.order.update({ where: { id }, data: { status: body.status as OrderStatus } }).catch(() => {
-    throw new ApiError(404, "Order not found");
+  const body = updateOrderStatusSchema.parse(req.body) as any;
+
+  const existing = await prisma.order.findFirst({ where: { id, isDeleted: false } });
+  if (!existing) throw new ApiError(404, "Order not found");
+
+  const data: any = { status: body.status as OrderStatus };
+  if (body.status === "DELIVERED") data.deliveredAt = new Date();
+
+  const order = await prisma.order.update({
+    where: { id },
+    data,
+    include: { rider: true },
   });
-  const augmented = augmentOrder(order);
-  getIO()?.emit("order:status:update", augmented);
-  res.json({ ok: true, data: augmented });
+
+  const serialized = serializeOrder(order);
+  const action =
+    body.status === "DELIVERED"
+      ? "ORDER_DELIVERED"
+      : body.status === "FAILED" || body.status === "RETURNED"
+        ? "ORDER_CANCELLED"
+        : "ORDER_STATUS_CHANGED";
+
+  await writeAudit({
+    action,
+    entityType: "Order",
+    entityId: id,
+    previousValues: { status: existing.status },
+    newValues: { status: order.status },
+    req,
+  });
+
+  getIO()?.emit("order.updated", serialized);
+  getIO()?.emit("order:status:update", serialized);
+  if (body.status === "DELIVERED") {
+    getIO()?.emit("order.completed", serialized);
+    getIO()?.emit("order:completed", serialized);
+  }
+  emitDashboard();
+  res.json({ ok: true, data: serialized });
 });
 
-// Create WhatsApp order (minimal behavior: similar to createOrder but source=WHATSAPP)
 export const createWhatsappOrder = asyncHandler(async (req: AuthedRequest, res: Response) => {
   const body = whatsappOrderSchema.parse(req.body) as any;
-
-  // Accept orderNumber alias
   if (!body.externalId && body.orderNumber) body.externalId = body.orderNumber;
-
   if (!body.externalId) {
-    throw new ApiError(400, "externalId (order number) is required for WhatsApp orders");
+    throw new ApiError(400, "Order number is required for WhatsApp orders");
   }
-
   const already = await prisma.order.findUnique({ where: { externalId: body.externalId } });
-  if (already) {
-    throw new ApiError(409, "An order with that order number already exists");
-  }
+  if (already) throw new ApiError(409, "Order number already exists.");
+
+  // Preserve WhatsApp metadata inside notes (no dedicated columns yet)
+  const metaParts: string[] = [];
+  if (body.waSenderPhone) metaParts.push(`WA sender: ${body.waSenderPhone}`);
+  if (body.waMessageExcerpt) metaParts.push(`WA message: ${body.waMessageExcerpt}`);
+  const notesCombined = [body.notes, ...metaParts].filter(Boolean).join("\n") || null;
+
+  const pickupLatVal = body.pickupLat ?? body.lat ?? undefined;
+  const pickupLngVal = body.pickupLng ?? body.lng ?? undefined;
 
   const orderData: any = {
     customerName: body.customerName,
     phone: body.phone,
     address: body.address,
     destination: body.destination,
+    pickupLat: pickupLatVal,
+    pickupLng: pickupLngVal,
+    destinationLat: body.destinationLat,
+    destinationLng: body.destinationLng,
+    lat: pickupLatVal,
+    lng: pickupLngVal,
     amount: body.amount,
     paymentType: body.paymentType,
     scheduledAt: body.scheduledAt ? new Date(body.scheduledAt) : null,
-    notes: body.notes,
+    notes: notesCombined,
     status: OrderStatus.NEW,
     source: "WHATSAPP",
     externalId: body.externalId,
+    isDeleted: false,
   };
 
   try {
-    const order = await prisma.order.create({ data: orderData });
-    getIO()?.emit("order:created", augmentOrder(order));
-    res.status(201).json({ ok: true, data: augmentOrder(order) });
+    const order = await prisma.order.create({ data: orderData, include: { rider: true } });
+    const serialized = serializeOrder(order);
+    await writeAudit({
+      action: "ORDER_CREATED",
+      entityType: "Order",
+      entityId: order.id,
+      newValues: { ...serialized, waSenderPhone: body.waSenderPhone, waMessageExcerpt: body.waMessageExcerpt },
+      req,
+    });
+    getIO()?.emit("order.created", serialized);
+    getIO()?.emit("order:created", serialized);
+    emitDashboard();
+    res.status(201).json({ ok: true, data: serialized });
   } catch (e: any) {
     if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
-      throw new ApiError(409, "An order with that order number already exists");
+      throw new ApiError(409, "Order number already exists.");
     }
     throw e;
   }
 });
 
-// Bulk CSV upload (stub for now)
 export const bulkUploadCsv = asyncHandler(async (req: AuthedRequest, res: Response) => {
-  // multer attached file is req.file
   if (!req.file) throw new ApiError(400, "file is required");
-  // parseCsv is available; you could implement parsing + createMany here.
-  // For now, return 501 to indicate not implemented.
-  res.status(501).json({ ok: false, error: "bulkUploadCsv not implemented on server yet" });
+
+  const text = req.file.buffer
+    ? req.file.buffer.toString("utf8")
+    : require("fs").readFileSync(req.file.path, "utf8");
+
+  const rows = parseCsv(text);
+  if (!rows.length) throw new ApiError(400, "CSV has no data rows");
+
+  // Accept column aliases for order number
+  const orderNumKey = (row: Record<string, string>) => {
+    const keys = Object.keys(row);
+    const found = keys.find((k) =>
+      ["externalid", "external_id", "ordernumber", "order_number", "order no", "orderno", "order no."].includes(
+        k.toLowerCase().trim()
+      )
+    );
+    return found ? row[found].trim() : "";
+  };
+
+  const results: { row: number; orderNumber?: string; ok: boolean; error?: string; id?: string }[] = [];
+  let imported = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const orderNumber = orderNumKey(row);
+    if (!orderNumber) {
+      results.push({ row: i + 2, ok: false, error: "Order number (externalId) is required" });
+      continue;
+    }
+
+    const customerName =
+      row.customername || row.customer_name || row.customer || row.name || "";
+    const phone = row.phone || row.customerphone || row.customer_phone || row.mobile || "";
+    const address = row.address || row.pickup || row.pickuplocation || row.pickup_location || "";
+    const destination = row.destination || row.dropoff || row.drop || "";
+    const amount = parseFloat(row.amount || row.value || "0") || 0;
+    const notes = row.notes || row.note || "";
+
+    if (!customerName || !phone || !address) {
+      results.push({
+        row: i + 2,
+        orderNumber,
+        ok: false,
+        error: "customerName, phone, and address/pickup are required",
+      });
+      continue;
+    }
+
+    try {
+      const existing = await prisma.order.findUnique({ where: { externalId: orderNumber } });
+      if (existing) {
+        results.push({ row: i + 2, orderNumber, ok: false, error: "Order number already exists." });
+        continue;
+      }
+
+      const order = await prisma.order.create({
+        data: {
+          customerName,
+          phone,
+          address,
+          destination: destination || null,
+          amount,
+          notes: notes || null,
+          status: OrderStatus.NEW,
+          source: "CSV",
+          externalId: orderNumber,
+          isDeleted: false,
+          paymentType: (row.paymenttype || row.payment || "COD").toUpperCase() === "PREPAID" ? "PREPAID" : "COD",
+        },
+      });
+
+      imported += 1;
+      results.push({ row: i + 2, orderNumber, ok: true, id: order.id });
+
+      const serialized = serializeOrder(order);
+      getIO()?.emit("order.created", serialized);
+      getIO()?.emit("order:created", serialized);
+    } catch (e: any) {
+      results.push({
+        row: i + 2,
+        orderNumber,
+        ok: false,
+        error: e?.message || "Failed to create order",
+      });
+    }
+  }
+
+  await writeAudit({
+    action: "ORDER_CREATED",
+    entityType: "Order",
+    entityId: null,
+    newValues: { imported, total: rows.length, source: "CSV" },
+    req,
+  });
+
+  emitDashboard();
+  res.status(200).json({
+    ok: true,
+    imported,
+    total: rows.length,
+    failed: results.filter((r) => !r.ok).length,
+    results,
+  });
 });
 
-// Upload proof-of-delivery (stub for now)
 export const uploadPod = asyncHandler(async (req: AuthedRequest, res: Response) => {
-  // multer attached file is req.file
   if (!req.file) throw new ApiError(400, "file is required");
-  // Implement saving to storage and updating order.podUrl
   res.status(501).json({ ok: false, error: "uploadPod not implemented yet" });
 });
 
-// --- END: Added handlers
+/** Live dashboard statistics */
+export const dashboardStats = asyncHandler(async (_req: AuthedRequest, res: Response) => {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const thirtyMinAgo = new Date(Date.now() - 30 * 60 * 1000);
+
+  const [
+    pendingOrders,
+    assignedOrders,
+    inTransit,
+    deliveredToday,
+    cancelledToday,
+    availableRiders,
+    busyRiders,
+    offlineRiders,
+    suspendedRiders,
+    waitingOver30,
+    todaysDeliveries,
+    deliveredWithTimes,
+  ] = await Promise.all([
+    prisma.order.count({ where: { isDeleted: false, status: "NEW" } }),
+    prisma.order.count({ where: { isDeleted: false, status: "ASSIGNED" } }),
+    prisma.order.count({ where: { isDeleted: false, status: { in: ["PICKED_UP", "IN_TRANSIT"] } } }),
+    prisma.order.count({
+      where: { isDeleted: false, status: "DELIVERED", deliveredAt: { gte: startOfDay } },
+    }),
+    prisma.order.count({
+      where: {
+        isDeleted: false,
+        status: { in: ["FAILED", "RETURNED"] },
+        updatedAt: { gte: startOfDay },
+      },
+    }),
+    prisma.rider.count({ where: { status: "AVAILABLE" } }),
+    prisma.rider.count({ where: { status: { in: ["BUSY", "IN_DELIVERY"] } } }),
+    prisma.rider.count({ where: { status: "OFFLINE" } }),
+    prisma.rider.count({ where: { status: "SUSPENDED" } }),
+    prisma.order.count({
+      where: {
+        isDeleted: false,
+        status: "NEW",
+        createdAt: { lte: thirtyMinAgo },
+      },
+    }),
+    prisma.order.count({
+      where: { isDeleted: false, status: "DELIVERED", deliveredAt: { gte: startOfDay } },
+    }),
+    prisma.order.findMany({
+      where: {
+        isDeleted: false,
+        status: "DELIVERED",
+        deliveredAt: { not: null },
+        createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+      },
+      select: { createdAt: true, deliveredAt: true },
+      take: 500,
+    }),
+  ]);
+
+  let avgDeliveryMinutes: number | null = null;
+  if (deliveredWithTimes.length) {
+    const mins = deliveredWithTimes
+      .filter((o: { deliveredAt: Date | null }) => !!o.deliveredAt)
+      .map((o: { deliveredAt: Date | null; createdAt: Date }) =>
+        (o.deliveredAt!.getTime() - o.createdAt.getTime()) / 60000
+      );
+    if (mins.length) {
+      avgDeliveryMinutes = Math.round(mins.reduce((a: number, b: number) => a + b, 0) / mins.length);
+    }
+  }
+
+  res.json({
+    ok: true,
+    data: {
+      pendingOrders,
+      assignedOrders,
+      inTransit,
+      deliveredToday,
+      cancelledToday,
+      availableRiders,
+      busyRiders,
+      offlineRiders,
+      suspendedRiders,
+      averageDeliveryTimeMinutes: avgDeliveryMinutes,
+      ordersWaitingOver30Minutes: waitingOver30,
+      todaysTotalDeliveries: todaysDeliveries,
+    },
+  });
+});

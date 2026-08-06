@@ -29,14 +29,20 @@ const CreateOrderModal: React.FC<{ open: boolean; onClose: () => void }> = ({ op
         message.error("Please select a destination on the map");
         return;
       }
-      const externalId = values.externalId ? String(values.externalId).trim() : "";
-      if (!externalId) {
+      const orderNumber = values.orderNumber
+        ? String(values.orderNumber).trim()
+        : values.externalId
+          ? String(values.externalId).trim()
+          : "";
+      if (!orderNumber) {
         message.error("Please enter an order number");
         return;
       }
 
       setSubmitting(true);
 
+      // Send both orderNumber and externalId so the backend stores the
+      // dispatcher-entered value permanently and never invents a new one.
       const payload = {
         customerName: values.customerName,
         phone: values.phone,
@@ -50,15 +56,15 @@ const CreateOrderModal: React.FC<{ open: boolean; onClose: () => void }> = ({ op
         paymentType: values.paymentType || "COD",
         scheduledAt: values.scheduledAt ? values.scheduledAt.toISOString() : null,
         notes: values.notes,
-        externalId,
+        orderNumber,
+        externalId: orderNumber,
       };
 
       const created = await createOrder(payload);
       const order = created?.data ?? created;
+      const savedNumber = order?.orderNumber || order?.externalId || orderNumber;
 
-      message.success(
-        `Order created${order?.externalId ? ` — order number: ${order.externalId}` : ""}`
-      );
+      message.success(`Order created — order number: ${savedNumber}`);
 
       qc.invalidateQueries(["dispatchOrders"]);
       qc.invalidateQueries(["orders"]);
@@ -98,15 +104,15 @@ const CreateOrderModal: React.FC<{ open: boolean; onClose: () => void }> = ({ op
           </Col>
         </Row>
 
-        {/* Order number (required for manual/WhatsApp) */}
+        {/* Order number (required for manual orders — stored permanently, never overwritten) */}
         <Row gutter={12}>
           <Col span={12}>
             <Form.Item
-              name="externalId"
-              label="Order number"
+              name="orderNumber"
+              label="Order Number"
               rules={[{ required: true, message: "Please enter an order number" }]}
             >
-              <Input placeholder="e.g. CMSDDC42 or your reference number" />
+              <Input placeholder="e.g. ORD-10025" />
             </Form.Item>
           </Col>
         </Row>

@@ -1,4 +1,5 @@
 import { io, Socket } from "socket.io-client";
+import { message } from "antd";
 import { ensureArray } from "../utils/normalize";
 import { queryClient } from "../lib/queryClient";
 
@@ -7,6 +8,24 @@ const SOCKET_URL =
   "https://zucchini-backend.onrender.com";
 
 let socket: Socket | null = null;
+
+function orderLabel(payload: any): string {
+  return payload?.orderNumber || payload?.externalId || "Order";
+}
+
+function refreshLists() {
+  try {
+    queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
+    queryClient.invalidateQueries({ queryKey: ["orders"] });
+    queryClient.invalidateQueries({ queryKey: ["ordersPage"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-live-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["dashboard-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["deletedOrders"] });
+    queryClient.invalidateQueries({ queryKey: ["riders"] });
+  } catch (err) {
+    console.error("Error invalidating queries from socket events", err);
+  }
+}
 
 export const initSocket = (): Socket => {
   if (socket) return socket;
@@ -21,72 +40,78 @@ export const initSocket = (): Socket => {
     reconnectionAttempts: 10,
     reconnectionDelay: 1000,
     timeout: 20000,
-    auth: {
-      token,
-    },
+    auth: { token },
   });
 
   socket.on("connect", () => {
-    try {
-      console.log("🟢 Socket connected:", socket?.id);
-
-      socket?.emit("join", {
-        role: "DISPATCHER",
-      });
-    } catch (err) {
-      console.error("Socket connect handler error", err);
-    }
+    console.log("Socket connected:", socket?.id);
+    socket?.emit("join", { role: "DISPATCHER" });
   });
 
   socket.on("disconnect", (reason) => {
-    console.log("🔴 Socket disconnected:", reason);
+    console.log("Socket disconnected:", reason);
   });
 
   socket.on("connect_error", (err: any) => {
-    console.error("❌ Socket connection error:", err?.message || err);
+    console.error("Socket connection error:", err?.message || err);
   });
 
-  socket.on("reconnect", (attempt) => {
-    console.log(`🟢 Socket reconnected after ${attempt} attempt(s)`);
+  // List refresh (colon + dot event names)
+  const events = [
+    "order:created",
+    "order.created",
+    "order:updated",
+    "order.updated",
+    "order:assigned",
+    "order.assigned",
+    "order:reassigned",
+    "order.reassigned",
+    "order:unassigned",
+    "order:status:update",
+    "order:deleted",
+    "order.deleted",
+    "order:restored",
+    "order.restored",
+    "order:completed",
+    "order.completed",
+    "rider:created",
+    "rider.created",
+    "rider:updated",
+    "rider.updated",
+    "rider:deleted",
+    "rider.deleted",
+    "dashboard:updated",
+    "dashboard.updated",
+  ];
+  events.forEach((ev) => socket!.on(ev, refreshLists));
+
+  // Dispatcher notifications
+  socket.on("order.assigned", (p: any) => {
+    message.info(`${orderLabel(p)} assigned${p?.rider?.name ? ` to ${p.rider.name}` : ""}`);
+  });
+  socket.on("order:assigned", (p: any) => {
+    /* refresh already handled; avoid double toast if both fire — only toast on dotted */
+  });
+  socket.on("order.completed", (p: any) => {
+    message.success(`${orderLabel(p)} delivered`);
+  });
+  socket.on("order.deleted", (p: any) => {
+    message.warning(`${orderLabel(p)} deleted`);
+  });
+  socket.on("order.created", (p: any) => {
+    message.success(`New order ${orderLabel(p)}`);
   });
 
-  // Generic orders update - safe merge
   socket.on("orders:update", (payload: unknown) => {
     try {
       const updates = ensureArray(payload);
       if (!updates.length) return;
-
-      queryClient.setQueryData(["dispatchOrders"], (old: any = []) => {
-        const oldArr = Array.isArray(old) ? old : [];
-        const merged = [...updates, ...oldArr];
-        const uniq = new Map();
-        return merged.filter((it: any) => {
-          if (!it || !it.id) return false;
-          if (uniq.has(it.id)) return false;
-          uniq.set(it.id, true);
-          return true;
-        });
-      });
-
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-    } catch (err) {
-      console.error("Error handling orders:update socket event", err);
-    }
-  });
-
-  // Specific order events - invalidate lists
-  const refreshLists = () => {
-    try {
       queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
       queryClient.invalidateQueries({ queryKey: ["orders"] });
     } catch (err) {
-      console.error("Error invalidating queries from socket events", err);
+      console.error("Error handling orders:update", err);
     }
-  };
-
-  socket.on("order:assigned", refreshLists);
-  socket.on("order:unassigned", refreshLists);
-  socket.on("order:status:update", refreshLists);
+  });
 
   return socket;
 };
@@ -95,7 +120,6 @@ export const getSocket = (): Socket | null => socket;
 
 export const disconnectSocket = (): void => {
   if (!socket) return;
-
   socket.removeAllListeners();
   socket.disconnect();
   socket = null;

@@ -5,7 +5,6 @@ import OrdersFilters from "./OrdersFilters";
 import SummaryCards from "./SummaryCards";
 import BulkActionsToolbar from "./BulkActionsToolbar";
 import OrdersTable from "./OrdersTable"; // reuse existing table component in same folder
-import AssignRiderModal from "./AssignRiderModal";
 import RemoveRiderDialog from "./RemoveRiderDialog";
 import "./orders-page.css";
 
@@ -51,7 +50,6 @@ const OrdersPage: React.FC = () => {
         />
       </div>
 
-      <AssignRiderModal selectedOrderIds={selectedOrderIds} />
       <RemoveRiderDialog selectedOrderIds={selectedOrderIds} />
     </div>
   );

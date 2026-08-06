@@ -1,8 +1,13 @@
-// Matches src/api/endpoints.ts in the Easybox web dashboard.
+/**
+ * Must match zucchini-backend routes under /api
+ * client baseURL already includes /api
+ */
 export const endpoints = {
   auth: {
     login: "/auth/login",
+    riderLogin: "/auth/rider/login",
     me: "/auth/me",
+    logout: "/auth/logout",
   },
   orders: {
     getMine: "/orders/mine",

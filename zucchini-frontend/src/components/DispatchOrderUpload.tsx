@@ -7,7 +7,8 @@ import client from "../api/client";
 const ZUCCHINI_NAMES = new Set(["zucchini", "zuchinni"]);
 
 const fetchMerchants = async () => {
-  const { data } = await client.get("/merchants");
+  let data: any = [];
+  try { data = (await client.get("/merchants")).data; } catch { data = []; }
   return Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
 };
 
@@ -23,8 +24,12 @@ export default function DispatchOrderUpload() {
   const zucchini = (merchants || []).find((m: any) => ZUCCHINI_NAMES.has((m?.name || "").toLowerCase()));
 
   const handleCreate = async (values: any) => {
-    const externalId = values.externalId ? String(values.externalId).trim() : "";
-    if (!externalId) {
+    const orderNumber = values.orderNumber
+      ? String(values.orderNumber).trim()
+      : values.externalId
+        ? String(values.externalId).trim()
+        : "";
+    if (!orderNumber) {
       message.error("Please enter an order number");
       return;
     }
@@ -37,7 +42,8 @@ export default function DispatchOrderUpload() {
       lat: values.lat ? Number(values.lat) : undefined,
       lng: values.lng ? Number(values.lng) : undefined,
       // Your own order number — required by the backend, never auto-generated.
-      externalId,
+      orderNumber,
+      externalId: orderNumber,
     };
 
     // Only include merchantId if zucchini integration is present
@@ -46,7 +52,7 @@ export default function DispatchOrderUpload() {
     try {
       const { data } = await client.post("/orders", payload);
       const order = data?.data ?? data;
-      message.success("Order created: " + (order?.externalId ?? order?.id ?? "(no id)"));
+      message.success("Order created: " + (order?.orderNumber ?? order?.externalId ?? orderNumber));
       form.resetFields();
       queryClient.invalidateQueries({ queryKey: ["orders"] });
     } catch (err: any) {
@@ -84,13 +90,13 @@ export default function DispatchOrderUpload() {
         </div>
       )}
       <div style={{ color: "#6b7280", marginBottom: 12, fontSize: 12 }}>
-        CSV files must include an <code>externalId</code> column with your own order number for each row.
+        CSV must include an order number column (<code>externalId</code> or <code>orderNumber</code>) plus customerName, phone, and address/pickup. Each order number is stored permanently — never auto-generated.
       </div>
 
       <Form form={form} layout="vertical" onFinish={handleCreate}>
         <Form.Item
-          name="externalId"
-          label="Order number"
+          name="orderNumber"
+          label="Order Number"
           rules={[{ required: true, message: "Please enter an order number" }]}
         >
           <Input placeholder="Your own order reference number" />

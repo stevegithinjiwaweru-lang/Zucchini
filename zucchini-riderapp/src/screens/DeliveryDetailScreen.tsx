@@ -85,7 +85,7 @@ const DeliveryDetailScreen: React.FC<{ route: any; navigation: any }> = ({ route
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: 16 }}>
       <View style={styles.headerRow}>
-        <Text style={styles.orderNo}>{order.externalId || order.id.slice(0, 8).toUpperCase()}</Text>
+        <Text style={styles.orderNo}>{order.orderNumber || order.externalId || "—"}</Text>
         <StatusBadge status={order.status} />
       </View>
 

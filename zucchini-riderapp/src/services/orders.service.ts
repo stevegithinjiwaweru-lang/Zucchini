@@ -3,30 +3,61 @@ import { endpoints } from "../api/endpoints";
 
 export interface RiderOrder {
   id: string;
-  externalId?: string | null; // dispatcher-provided order number, shown to riders instead of the system id
+  orderNumber?: string | null;
+  externalId?: string | null;
   customerName: string;
   phone?: string;
+  customerPhone?: string;
   address: string;
+  pickupLocation?: string;
   destination?: string;
   distance?: number;
   scheduledAt?: string | null;
+  deliveredAt?: string | null;
   status: string;
   createdAt: string;
+  updatedAt?: string;
   lat?: number;
   lng?: number;
   [key: string]: any;
 }
 
-// Orders assigned to the logged-in rider (mirrors the "Rider Application" side
-// of the workflow: the rider only ever sees their own assigned deliveries).
-export const getMyOrders = async (): Promise<RiderOrder[]> => {
-  const { data } = await client.get(endpoints.orders.getMine);
-  // Backend responds with { ok: true, data: [...] } — this app's axios
-  // client (unlike the web dashboard's) doesn't auto-unwrap that envelope,
-  // so read .data (falling back to .items for older/other shapes) instead
-  // of assuming the array is top-level. Previously this looked for
-  // `.items`, which the backend never sends, so deliveries never loaded.
-  return Array.isArray(data) ? data : data?.data || data?.items || [];
+export type MyOrdersScope = "active" | "completed" | "all";
+
+export interface MyOrdersResult {
+  all: RiderOrder[];
+  active: RiderOrder[];
+  completed: RiderOrder[];
+}
+
+const ACTIVE_STATUSES = ["ASSIGNED", "PICKED_UP", "IN_TRANSIT"];
+const COMPLETED_STATUSES = ["DELIVERED", "FAILED", "RETURNED"];
+
+function unwrapList(data: any): RiderOrder[] {
+  if (Array.isArray(data)) return data;
+  return data?.data || data?.items || [];
+}
+
+/** Orders for the logged-in rider (active + completed). */
+export const getMyOrders = async (scope: MyOrdersScope = "all"): Promise<MyOrdersResult> => {
+  const { data } = await client.get(endpoints.orders.getMine, {
+    params: { scope, limit: 100 },
+  });
+
+  const list = unwrapList(data);
+  const activeFromApi = Array.isArray(data?.active) ? data.active : null;
+  const completedFromApi = Array.isArray(data?.completed) ? data.completed : null;
+
+  const active =
+    activeFromApi || list.filter((o) => ACTIVE_STATUSES.includes(o.status));
+  const completed =
+    completedFromApi || list.filter((o) => COMPLETED_STATUSES.includes(o.status));
+
+  return {
+    all: list,
+    active,
+    completed,
+  };
 };
 
 export const getOrder = async (id: string): Promise<RiderOrder> => {
@@ -39,9 +70,6 @@ export const updateOrderStatus = async (id: string, status: string) => {
   return data;
 };
 
-// Proof of delivery photo upload (multipart). Field name must be "file" to
-// match the backend's podUpload.single("file") — previously this sent "pod",
-// which the backend didn't look for, so every upload would have failed.
 export const uploadProofOfDelivery = async (id: string, photoUri: string) => {
   const form = new FormData();
   form.append("file", {
@@ -54,4 +82,11 @@ export const uploadProofOfDelivery = async (id: string, photoUri: string) => {
     headers: { "Content-Type": "multipart/form-data" },
   });
   return data;
+};
+
+/** Display order number — never the system id. */
+export const displayOrderNumber = (order: RiderOrder | null | undefined): string => {
+  if (!order) return "—";
+  const n = (order.orderNumber || order.externalId || "").trim();
+  return n || "—";
 };

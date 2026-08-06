@@ -14,7 +14,7 @@ const OrdersTable: React.FC<{ filters: any; onAssignClick: (id: string) => void 
       dataIndex: 'externalId',
       key: 'externalId',
       render: (externalId: string, record: any) => (
-        <a href={`/orders/${record.id}`}>{externalId || record.id?.slice(0, 8).toUpperCase()}</a>
+        <a href={`/orders/${record.id}`}>{record.orderNumber || externalId || '—'}</a>
       ),
     },
     { title: 'Customer', dataIndex: 'customerName', key: 'customerName' },

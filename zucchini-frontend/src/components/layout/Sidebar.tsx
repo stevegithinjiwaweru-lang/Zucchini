@@ -20,6 +20,7 @@ const Sidebar: React.FC = () => {
           <NavLink to="/tracking" className={({ isActive }) => (isActive ? "active" : "")}>Tracking</NavLink>
           <NavLink to="/ratings" className={({ isActive }) => (isActive ? "active" : "")}>Ratings</NavLink>
           <NavLink to="/reports" className={({ isActive }) => (isActive ? "active" : "")}>Reports</NavLink>
+          <NavLink to="/deleted-orders" className={({ isActive }) => (isActive ? "active" : "")}>Deleted Orders</NavLink>
           <NavLink to="/settings" className={({ isActive }) => (isActive ? "active" : "")}>Settings</NavLink>
         </nav>
       </div>

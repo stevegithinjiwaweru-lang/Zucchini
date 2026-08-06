@@ -3,7 +3,7 @@ import { prisma } from "../lib/prisma";
 import { decryptSecret } from "../utils/crypto";
 import { ApiError } from "../utils/asyncHandler";
 import { getIO } from "../socket";
-import { OrderStatus } from "@prisma/client";
+import { OrderStatus } from "../types/enums";
 
 const SHOPIFY_API_VERSION = "2024-10";
 

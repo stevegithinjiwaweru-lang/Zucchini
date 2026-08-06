@@ -62,7 +62,7 @@ const normalizeArray = (response: any, ...keys: string[]): any[] => {
 
 const fetchOrders = async () => (await client.get("/orders", { params: { limit: 100 } })).data;
 const fetchRiders = async () => (await client.get("/riders", { params: { limit: 100 } })).data;
-const fetchMerchants = async () => (await client.get("/merchants")).data;
+const fetchMerchants = async () => { try { return (await client.get("/merchants")).data; } catch { return []; } };
 
 const ASSIGNED_STATUSES = ["ASSIGNED", "PICKED_UP", "IN_TRANSIT", "DELIVERED", "FAILED", "RETURNED"];
 
@@ -275,7 +275,7 @@ const DispatchBoard: React.FC = () => {
                           background: selectedOrder?.id === o.id ? "#fff0f6" : "transparent",
                         }}
                       >
-                        <td>{o.externalId || o.id.slice(0, 8).toUpperCase()}</td>
+                        <td>{o.orderNumber || o.externalId || '—'}</td>
                         <td>
                           <span
                             style={{
@@ -340,7 +340,7 @@ const DispatchBoard: React.FC = () => {
                     {recentAssignments.map((o) => (
                       <tr key={o.id}>
                         <td style={{ fontWeight: 700, color: "#e40d6e" }}>
-                          {o.externalId || o.id.slice(0, 8).toUpperCase()}
+                          {o.orderNumber || o.externalId || '—'}
                         </td>
                         <td>{o.rider?.name}</td>
                         <td>
@@ -419,7 +419,7 @@ const DispatchBoard: React.FC = () => {
                 }}
               >
                 <span>
-                  Assigning <strong>{selectedOrder.externalId || selectedOrder.id.slice(0, 8).toUpperCase()}</strong> — pick a
+                  Assigning <strong>{selectedOrder.orderNumber || selectedOrder.externalId || '—'}</strong> — pick a
                   rider below
                 </span>
                 <Button size="small" type="text" onClick={() => setSelectedOrder(null)}>

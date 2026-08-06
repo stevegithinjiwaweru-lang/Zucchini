@@ -9,12 +9,15 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate || echo Prisma generate failed - run npx prisma generate manually when online",
     "start": "prisma migrate deploy && node dist/seed.js && node dist/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "seed": "ts-node src/seed.ts",
-    "clear-orders": "ts-node --project scripts/tsconfig.json scripts/clear-orders.ts"
+    "clear-orders": "ts-node --project scripts/tsconfig.json scripts/clear-orders.ts",
+    "e2e": "ts-node --project scripts/tsconfig.json scripts/e2e-workflow.ts",
+    "cleanup-legacy": "ts-node --project scripts/tsconfig.json scripts/cleanup-legacy-order-numbers.ts",
+    "migrate-legacy": "ts-node --project scripts/tsconfig.json scripts/migrate-legacy-orders.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.19.1",

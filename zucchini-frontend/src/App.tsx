@@ -13,6 +13,7 @@ import Tracking from "./pages/Tracking";
 // removed Merchants import
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
+import DeletedOrders from "./pages/DeletedOrders";
 import Ratings from "./pages/Ratings";
 
 import LayoutShell from "./components/layout/LayoutShell";
@@ -45,6 +46,7 @@ const App: React.FC = () => {
           <Route path="ratings" element={<Ratings />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="deleted-orders" element={<DeletedOrders />} />
         </Route>
 
         {/* Redirect old merchants/customers links to ratings */}

@@ -383,3 +383,138 @@ const Riders: React.FC = () => {
                     )}
 
                     {[
+                      <Button key="suspend" onClick={() => setStatus(rider, "SUSPENDED")}>Suspend</Button>,
+                      <Button key="offline" onClick={() => setStatus(rider, "OFFLINE")}>Set Offline</Button>,
+                      <Button key="delete" icon={<DeleteOutlined />} danger onClick={() => confirmDelete(rider)}>Delete</Button>,
+                    ]}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <Empty description="No riders found" />
+        )}
+      </Card>
+
+      {/* Add/Edit/Assign/Profile modals (skeletons) */}
+      <Modal
+        open={addOpen}
+        title="Add Rider"
+        onCancel={() => {
+          setAddOpen(false);
+          form.resetFields();
+        }}
+        footer={null}
+        destroyOnClose
+        width={520}
+      >
+        <Form form={form} onFinish={addRider} layout="vertical">
+          <Form.Item name="name" label="Full Name" rules={[{ required: true, message: "Name is required" }]}>
+            <Input placeholder="Full name" />
+          </Form.Item>
+          <Form.Item
+            name="phone"
+            label="Phone Number"
+            rules={[{ required: true, message: "Phone number is required" }, { min: 6, message: "Enter a valid phone number" }]}
+          >
+            <Input placeholder="07xx xxx xxx" />
+          </Form.Item>
+          <Form.Item
+            name="password"
+            label="Password"
+            rules={[
+              { required: true, message: "Password is required" },
+              { min: 8, message: "Password must be at least 8 characters" },
+            ]}
+          >
+            <Input.Password placeholder="Minimum 8 characters" visibilityToggle />
+          </Form.Item>
+          <Form.Item
+            name="confirmPassword"
+            label="Confirm Password"
+            dependencies={["password"]}
+            rules={[
+              { required: true, message: "Please confirm password" },
+              ({ getFieldValue }) => ({
+                validator(_, value) {
+                  if (!value || getFieldValue("password") === value) return Promise.resolve();
+                  return Promise.reject(new Error("Passwords do not match"));
+                },
+              }),
+            ]}
+          >
+            <Input.Password placeholder="Confirm password" visibilityToggle />
+          </Form.Item>
+          <Form.Item name="nationalId" label="National ID">
+            <Input placeholder="National ID" />
+          </Form.Item>
+          <Form.Item name="drivingLicenceNo" label="Driving Licence">
+            <Input placeholder="Driving licence number" />
+          </Form.Item>
+          <Form.Item name="vehicleType" label="Vehicle Type">
+            <Select
+              allowClear
+              placeholder="Select vehicle type"
+              options={VEHICLE_TYPES.map((v) => ({ label: v, value: v }))}
+            />
+          </Form.Item>
+          <Form.Item name="bikeReg" label="Vehicle Registration">
+            <Input placeholder="e.g. KAA 123A" />
+          </Form.Item>
+          <Form.Item name="branch" label="Operational Zone">
+            <Input placeholder="Branch / zone" />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={addLoading} block>
+              Create Rider
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal open={!!editRider} title="Edit Rider" onCancel={() => setEditRider(null)} footer={null}>
+        <Form form={editForm} onFinish={submitEdit} layout="vertical">
+          <Form.Item name="name" label="Name" rules={[{ required: true }]}> 
+            <Input />
+          </Form.Item>
+          <Form.Item name="phone" label="Phone"> 
+            <Input />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" loading={editLoading}>
+              Save
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={!!assignRider}
+        title={assignRider ? `Assign order to ${assignRider.name}` : 'Assign Order'}
+        onOk={confirmAssign}
+        onCancel={() => { setAssignRider(null); setAssignOrderId(null); }}
+      >
+        <Select
+          value={assignOrderId ?? undefined}
+          onChange={(v) => setAssignOrderId(v)}
+          style={{ width: '100%' }}
+          options={unassignedOrders.map((o) => ({ label: o.externalId || o.id, value: o.id }))}
+        />
+      </Modal>
+
+      <Modal open={!!profileRider} title="Rider Profile" onCancel={() => setProfileRider(null)} footer={null}>
+        {profileRider ? (
+          <div>
+            <p><strong>{profileRider.name}</strong></p>
+            <p>{profileRider.phone}</p>
+            <p>Vehicle: {profileRider.vehicleType || '—'}</p>
+            <p>Branch: {profileRider.branch || '—'}</p>
+          </div>
+        ) : null}
+      </Modal>
+    </div>
+  );
+};
+
+export default Riders;

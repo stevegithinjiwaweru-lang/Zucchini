@@ -32,10 +32,9 @@ export type PaymentType = "COD" | "PREPAID";
 
 export type Order = {
   id: string;
-  /** Permanent dispatcher-provided order number (stored as externalId in DB) */
-  orderNumber?: string | null;
-  externalId?: string | null; // alias of orderNumber
-  merchantId?: string | null; // made optional to match backend changes
+  /** externalId: the manually-entered or externally-provided order identifier */
+  externalId?: string | null;
+  merchantId?: string | null; // made optional to match back-end
   merchant?: Merchant;
   customerName: string;
   phone: string;
@@ -43,42 +42,14 @@ export type Order = {
   destination?: string;
   distance?: number;
   scheduledAt?: string | null;
-  lat?: number;
-  lng?: number;
-  amount: number;
-  paymentType: PaymentType;
+  lat?: number | null;
+  lng?: number | null;
+  amount?: number;
+  paymentType?: PaymentType;
   status: OrderStatus;
   riderId?: string | null;
-  createdAt: string;
+  createdAt?: string;
   updatedAt?: string;
   deliveredAt?: string | null;
-};
-
-export type RiderStatus =
-  | "AVAILABLE"
-  | "BUSY"
-  | "OFFLINE"
-  | "SUSPENDED"
-  | "IN_DELIVERY";
-
-export type RiderLocation = {
-  lat: number;
-  lng: number;
-  timestamp: string;
-};
-
-export type Rider = {
-  id: string;
-  name: string;
-  phone: string;
-  nationalId?: string;
-  drivingLicenceNo?: string;
-  bikeReg?: string;
-  vehicleType?: string;
-  branch?: string;
-  status: RiderStatus;
-  activeOrders?: number;
-  lastActiveAt?: string | null;
-  lastLocation?: RiderLocation;
-  userId?: string;
+  notes?: string | null;
 };

@@ -1,26 +1,12 @@
 /**
- * Consistent order number display across the app.
+ * Order display identifier
  *
- * Rules:
- * - Always prefer the dispatcher-provided value (orderNumber / externalId).
- * - NEVER treat the Prisma system id as an order number for display.
- * - For legacy rows with no externalId, show a clear placeholder — not a
- *   truncated cuid that looks like a real order number (e.g. CMSD4P3H).
+ * This returns the externally-provided order identifier (externalId) when present.
+ * We intentionally DO NOT fall back to id.slice(...) or auto-generated UUID display.
+ * If externalId is not present, return a neutral placeholder.
  */
-export function getOrderDisplayNumber(order: {
-  externalId?: string | null;
-  orderNumber?: string | null;
-  id?: string;
-  source?: string;
-} | null | undefined): string {
+export function getOrderDisplayNumber(order: { externalId?: string | null } | null | undefined): string {
   if (!order) return "—";
-  const num = (order.orderNumber || order.externalId || "").trim();
-  if (num) {
-    // Guard: if externalId was accidentally set to the system id, don't show it
-    if (order.id && (num === order.id || num === order.id.slice(0, 8).toUpperCase())) {
-      return "—";
-    }
-    return num;
-  }
-  return "—";
+  const v = (order.externalId ?? "").toString().trim();
+  return v.length ? v : "—";
 }

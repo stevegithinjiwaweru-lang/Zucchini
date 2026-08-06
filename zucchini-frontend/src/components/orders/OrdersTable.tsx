@@ -20,11 +20,13 @@ import {
   DeleteOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
+import { UserAddOutlined as UserAddIcon, SwapOutlined as SwapIcon } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
-import client from "../../api/client";
-import { deleteOrder } from "../../services/dispatch.service";
+import client from "../../../api/client";
+import { deleteOrder } from "../../../services/dispatch.service";
 import AssignRiderModal from "../dispatch/AssignRiderModal";
+import AssignRiderModalLocal from "../dispatch/AssignRiderModal";
 import { getOrderDisplayNumber } from "../../utils/orderNumber";
 
 const LOCKED_STATUSES = new Set(["ASSIGNED", "PICKED_UP", "IN_TRANSIT", "DELIVERED", "FAILED", "RETURNED"]);
@@ -42,6 +44,7 @@ const STATUS_COLORS: Record<string, string> = {
   DELIVERED: "green",
   FAILED: "red",
   RETURNED: "default",
+  RETURNED: "default",
 };
 
 interface OrdersTableProps {
@@ -50,41 +53,28 @@ interface OrdersTableProps {
   selectedRowKeys?: string[];
 }
 
-const OrdersTable: React.FC<OrdersTableProps> = ({
-  filters = {},
-  onSelectionChange,
-  selectedRowKeys = [],
-}) => {
+const OrdersTable: React.FC<OrdersTableProps> = ({ filters = {}, onSelectionChange, selectedRowKeys = [] }) => {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [assignOpen, setAssignOpen] = useState(false);
-  const [assignOrderId, setAssignOrderId] = useState<string | null>(null);
+  const [assignOrderId, setAssignOrderId] = useState(null as any);
   const [isReassign, setIsReassign] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [editingOrder, setEditingOrder] = useState<any | null>(null);
-  const [editLoading, setEditLoading] = useState(false);
+  const [editOpen2, setEditOpen2] = useState(false);
+  const [editingOrder, setEditingOrder] = useState<any>(null);
+  const [editLoading, setEditingLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
+
   const [form] = Form.useForm();
 
-  const queryFilters = useMemo(
-    () => ({
-      ...filters,
-      search: search || filters.search || undefined,
-      limit: filters.limit || 50,
-      page: filters.page || 1,
-    }),
-    [filters, search]
-  );
+  const queryFilters = useMemo(() => ({ ...filters, search, page: 1 }), [filters, search]);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["ordersPage", queryFilters],
-    queryFn: async () => {
-      const res = await client.get("/orders", { params: queryFilters });
-      return res.data;
-    },
-    keepPreviousData: true,
+  const { data, isLoading } = useQuery(["ordersPage", queryFilters], async () => {
+    const res = await client.get("/orders", { params: queryFilters });
+    return res.data;
   });
 
-  const orders: any[] = Array.isArray(data) ? data : data?.items || data?.data || [];
+  const rows = Array.isArray(data?.data) ? data.data : [];
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ["ordersPage"] });
@@ -94,72 +84,50 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
 
   const openAssign = (order: any, reassign = false) => {
     setAssignOrderId(order.id);
-    setIsReassign(reassign);
     setAssignOpen(true);
+    setIsReassign(reassign);
   };
 
   const openEdit = (order: any) => {
     setEditingOrder(order);
     form.setFieldsValue({
-      orderNumber: getOrderDisplayNumber(order),
+      externalId: getOrderDisplayNumber(order),
       customerName: order.customerName,
       phone: order.phone,
       address: order.address,
       destination: order.destination,
+      amount: order.amount,
+      paymentType: order.paymentType,
       notes: order.notes,
-      status: order.status,
-      scheduledAt: order.scheduledAt ? dayjs(order.scheduledAt) : null,
     });
     setEditOpen(true);
   };
 
   const handleEdit = async () => {
-    if (!editingOrder) return;
     try {
-      const values = await form.validateFields();
-      setEditLoading(true);
-      const payload: any = {
+      const values = await form.validateFields() as any;
+      setEditingLoading(true);
+      const payload = {
+        externalId: values.externalId,
         customerName: values.customerName,
         phone: values.phone,
         address: values.address,
         destination: values.destination,
+        amount: values.amount,
+        paymentType: values.paymentType,
         notes: values.notes,
-        status: values.status,
-        orderNumber: values.orderNumber,
-        externalId: values.orderNumber,
-        scheduledAt: values.scheduledAt ? values.scheduledAt.toISOString() : null,
       };
-      await client.put(`/orders/${editingOrder.id}`, payload);
-      message.success("Order updated");
-      setEditOpen(false);
-      setEditingOrder(null);
-      refresh();
-    } catch (err: any) {
-      if (err?.errorFields) return;
-      message.error(err?.response?.data?.error || err?.message || "Failed to update order");
-    } finally {
-      setEditLoading(false);
-    }
-  };
 
-  const handleDelete = (order: any) => {
-    const displayNo = getOrderDisplayNumber(order);
-    Modal.confirm({
-      title: "Are you sure you want to delete this order?",
-      content: `Order ${displayNo} will be removed from Orders and Dispatch. You can restore it later from deleted records.`,
-      okText: "Delete",
-      okType: "danger",
-      cancelText: "Cancel",
-      onOk: async () => {
-        try {
-          await deleteOrder(order.id);
-          message.success("Order moved to deleted records");
-          refresh();
-        } catch (err: any) {
-          message.error(err?.response?.data?.error || err?.message || "Failed to delete order");
-        }
-      },
-    });
+      const r = editingOrder
+        ? await client.put(`/orders/${editingOrder.id}`, payload)
+        : await client.post("/orders", payload);
+
+      // ... handle response
+      refresh();
+      setEditOpen(false);
+    } finally {
+      setEditingLoading(false);
+    }
   };
 
   const columns = [
@@ -167,8 +135,8 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
       title: "Order No.",
       key: "orderNumber",
       width: 140,
-      render: (_: any, record: any) => (
-        <a href={`/orders/${record.id}`}>{getOrderDisplayNumber(record)}</a>
+      render: (v: any) => (
+        <a href={`orders/${v.id}`}>{getOrderDisplayNumber(v)}</a>
       ),
     },
     {
@@ -194,7 +162,6 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
       dataIndex: "destination",
       key: "destination",
       ellipsis: true,
-      render: (v: string) => v || "—",
     },
     {
       title: "Status",
@@ -207,8 +174,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
       title: "Rider",
       key: "rider",
       width: 120,
-      render: (_: any, record: any) =>
-        record.rider?.name || (record.riderId ? "Assigned" : "—"),
+      render: (_: any, record: any) => (record.rider ? (<div>{record.rider?.name || "Assigned"}</div>) : (<div>No Rider Assigned</div>)),
     },
     {
       title: "Created",
@@ -226,48 +192,25 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
         const hasRider = !!(record.riderId || record.rider?.id);
         return (
           <Space size={4} wrap>
-            {!hasRider ? (
-              <Tooltip title="Assign rider">
-                <Button
-                  type="primary"
-                  size="small"
-                  icon={<UserAddOutlined />}
-                  onClick={() => openAssign(record, false)}
-                >
-                  Assign
-                </Button>
-              </Tooltip>
+            {hasRider ? (
+              <div>
+                <div><strong>{hasRider ? (record.rider?.name || "Assigned") : ""}</strong></div>
+              </div>
             ) : (
-              <Tooltip title="Reassign rider">
-                <Button
-                  size="small"
-                  style={{ background: "#fa8c16", borderColor: "#fa8c16", color: "#fff" }}
-                  icon={<SwapOutlined />}
-                  onClick={() => openAssign(record, true)}
-                >
-                  Reassign
-                </Button>
-              </Tooltip>
+              <div>
+                <Tooltip title="Assign rider">
+                  <Button size="small" icon={<UserAddOutlined />} onClick={() => openAssign(record, false)}>Assign</Button>
+                </Tooltip>
+                <Tooltip title="Reassign rider">
+                  <Button size="small" icon={<SwapOutlined />} onClick={() => openAssign(record, true)}>Reassign</Button>
+                </Tooltip>
+              </div>
             )}
             <Tooltip title="Edit order">
-              <Button
-                size="small"
-                style={{ background: "#52c41a", borderColor: "#52c41a", color: "#fff" }}
-                icon={<EditOutlined />}
-                onClick={() => openEdit(record)}
-              >
-                Edit
-              </Button>
+              <Button size="small" style={{ background: "#52c41a", borderColor: "#52c41a", color: "#fff" }} icon={<EditOutlined />} onClick={() => openEdit(record)}>Edit</Button>
             </Tooltip>
             <Tooltip title="Delete order">
-              <Button
-                danger
-                size="small"
-                icon={<DeleteOutlined />}
-                onClick={() => handleDelete(record)}
-              >
-                Delete
-              </Button>
+              <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDelete(record)}>Delete</Button>
             </Tooltip>
           </Space>
         );
@@ -275,7 +218,7 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
     },
   ];
 
-  if (isLoading && !orders.length) {
+  if (isLoading && !rows.length) {
     return (
       <div style={{ textAlign: "center", padding: 48 }}>
         <Spin size="large" />
@@ -286,39 +229,27 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
   return (
     <div>
       <div style={{ marginBottom: 12, display: "flex", gap: 8 }}>
-        <Input
-          prefix={<SearchOutlined />}
-          placeholder="Search by order number, customer, or phone..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          allowClear
-          style={{ maxWidth: 360 }}
-        />
+        <Spin size="large" />
       </div>
 
       <Table
         rowKey="id"
         columns={columns}
-        dataSource={orders}
-        loading={isLoading}
+        dataSource={rows}
+        loading={{ isLoading }}
         scroll={{ x: 1200 }}
         pagination={{
           current: queryFilters.page,
-          pageSize: queryFilters.limit,
+          pageSize: queryFilters.pageSize,
           total: data?.total,
           showSizeChanger: true,
           onChange: (page, pageSize) => {
             // parent may control filters; local search still works
           },
         }}
-        rowSelection={
-          onSelectionChange
-            ? {
-                selectedRowKeys,
-                onChange: (keys) => onSelectionChange(keys as string[]),
-              }
-            : undefined
-        }
+        rowSelection={{
+          onChange: (selectedKeys) => onSelectionChange && onSelectionChange(selectedKeys as string[]),
+        }}
       />
 
       <AssignRiderModal
@@ -327,58 +258,35 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
         onClose={() => {
           setAssignOpen(false);
           setAssignOrderId(null);
-          setIsReassign(false);
         }}
         onAssigned={() => {
           setAssignOpen(false);
-          setAssignOrderId(null);
-          setIsReassign(false);
           refresh();
-          message.success(isReassign ? "Rider reassigned" : "Rider assigned");
         }}
       />
 
       <Modal
         title="Edit Order"
         open={editOpen}
-        onCancel={() => {
-          setEditOpen(false);
-          setEditingOrder(null);
-        }}
         onOk={handleEdit}
         confirmLoading={editLoading}
-        okText="Save"
+        onCancel={() => setEditOpen(false)}
         width={560}
         destroyOnClose
       >
         <Form form={form} layout="vertical">
           <Form.Item
-            name="orderNumber"
-            label="Order Number"
-            rules={[{ required: true, message: "Order number is required" }]}
-            extra={
-              editingOrder && !isOrderNumberEditable(editingOrder)
-                ? "Order number is locked after assignment"
-                : undefined
-            }
+            name="externalId"
+            label="External ID (Order Number)"
+            rules={[{ required: true, message: "External ID is required for manual orders" }]}
           >
-            <Input
-              placeholder="e.g. ORD-10025"
-              disabled={!!(editingOrder && !isOrderNumberEditable(editingOrder))}
-            />
+            <Input placeholder="EX-2026-0001" disabled={!(editingOrder && !isOrderNumberEditable(editingOrder))} />
           </Form.Item>
-          <Form.Item
-            name="customerName"
-            label="Customer"
-            rules={[{ required: true, message: "Customer name is required" }]}
-          >
+
+          <Form.Item name="customerName" label="Customer">
             <Input />
           </Form.Item>
-          <Form.Item
-            name="phone"
-            label="Phone"
-            rules={[{ required: true, message: "Phone is required" }]}
-          >
+          <Form.Item name="phone" label="Phone">
             <Input />
           </Form.Item>
           <Form.Item name="address" label="Pickup">
@@ -387,24 +295,11 @@ const OrdersTable: React.FC<OrdersTableProps> = ({
           <Form.Item name="destination" label="Destination">
             <Input />
           </Form.Item>
+          <Form.Item name="amount" label="Order Value">
+            <Input />
+          </Form.Item>
           <Form.Item name="notes" label="Notes">
             <Input.TextArea rows={2} />
-          </Form.Item>
-          <Form.Item name="scheduledAt" label="Scheduled Time">
-            <DatePicker showTime style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="status" label="Status">
-            <Select
-              options={[
-                { value: "NEW", label: "NEW" },
-                { value: "ASSIGNED", label: "ASSIGNED" },
-                { value: "PICKED_UP", label: "PICKED_UP" },
-                { value: "IN_TRANSIT", label: "IN_TRANSIT" },
-                { value: "DELIVERED", label: "DELIVERED" },
-                { value: "FAILED", label: "FAILED" },
-                { value: "RETURNED", label: "RETURNED" },
-              ]}
-            />
           </Form.Item>
         </Form>
       </Modal>

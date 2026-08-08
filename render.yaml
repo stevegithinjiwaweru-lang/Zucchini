@@ -36,6 +36,17 @@ services:
       # (Dashboard -> zucchini-backend -> Environment). e.g. https://zucchini-frontend.onrender.com
       - key: CORS_ORIGIN
         sync: false
+      # Shopify — set real values in Render dashboard (never commit secrets)
+      - key: SHOPIFY_CLIENT_ID
+        sync: false
+      - key: SHOPIFY_CLIENT_SECRET
+        sync: false
+      - key: SHOPIFY_APP_URL
+        value: https://zucchini-backend.onrender.com
+      - key: PUBLIC_BACKEND_URL
+        value: https://zucchini-backend.onrender.com
+      - key: SHOPIFY_REDIRECT_URI
+        value: https://zucchini-backend.onrender.com/api/shopify/callback
 
   # --- Frontend (React + Vite admin dashboard) ---
   - type: web

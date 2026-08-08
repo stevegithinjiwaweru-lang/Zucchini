@@ -1,6 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
-  Card,
   Table,
   Button,
   Space,
@@ -13,36 +12,22 @@ import {
   message,
   Spin,
   Tooltip,
-  Row,
-  Col,
 } from "antd";
 import {
   UserAddOutlined,
+  SwapOutlined,
   EditOutlined,
   DeleteOutlined,
-  PlusOutlined,
   SearchOutlined,
-  ReloadOutlined,
 } from "@ant-design/icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import client from "../../api/client";
 import { deleteOrder } from "../../services/dispatch.service";
-import AssignRiderModal from "./AssignRiderModal";
-import CreateOrderModal from "./CreateOrderModal";
-import CreateWhatsAppOrderModal from "./CreateWhatsAppOrderModal";
-import { getSocket } from "../../services/socket";
+import AssignRiderModal from "../dispatch/AssignRiderModal";
 import { getOrderDisplayNumber } from "../../utils/orderNumber";
 
-const LOCKED_STATUSES = new Set([
-  "ASSIGNED",
-  "PICKED_UP",
-  "IN_TRANSIT",
-  "DELIVERED",
-  "FAILED",
-  "RETURNED",
-]);
-
+const LOCKED_STATUSES = new Set(["ASSIGNED", "PICKED_UP", "IN_TRANSIT", "DELIVERED", "FAILED", "RETURNED"]);
 function isOrderNumberEditable(order: any) {
   if (!order) return true;
   if (order.riderId || order.rider?.id) return false;
@@ -59,107 +44,57 @@ const STATUS_COLORS: Record<string, string> = {
   RETURNED: "default",
 };
 
-const DispatchPage: React.FC = () => {
+interface OrdersTableProps {
+  filters?: Record<string, any>;
+  onSelectionChange?: (ids: string[]) => void;
+  selectedRowKeys?: string[];
+}
+
+const OrdersTable: React.FC<OrdersTableProps> = ({
+  filters = {},
+  onSelectionChange,
+  selectedRowKeys = [],
+}) => {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [waOpen, setWaOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignOrderId, setAssignOrderId] = useState<string | null>(null);
+  const [isReassign, setIsReassign] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   const [editLoading, setEditLoading] = useState(false);
   const [form] = Form.useForm();
 
-  // Dispatch queue: NEW + unassigned + MANUAL/SHOPIFY/WHATSAPP only.
-  // Assigned orders leave this list and are managed on the Orders page.
-  const filters = useMemo(
+  const queryFilters = useMemo(
     () => ({
-      search: search || undefined,
-      dispatchQueue: "true",
-      status: "NEW",
-      limit: 100,
+      ...filters,
+      search: search || filters.search || undefined,
+      limit: filters.limit || 50,
+      page: filters.page || 1,
     }),
-    [search]
+    [filters, search]
   );
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ["dispatchOrders", filters],
+  const { data, isLoading } = useQuery({
+    queryKey: ["ordersPage", queryFilters],
     queryFn: async () => {
-      try {
-        const res = await client.get("/dispatches");
-        return res.data;
-      } catch {
-        const res = await client.get("/orders", { params: filters });
-        return res.data;
-      }
+      const res = await client.get("/orders", { params: queryFilters });
+      return res.data;
     },
     keepPreviousData: true,
   });
 
-  const rawOrders: any[] = Array.isArray(data)
-    ? data
-    : data?.items || data?.data || data?.dispatches || [];
-
-  const orders: any[] = rawOrders
-    .filter(
-      (o) =>
-        o &&
-        o.status === "NEW" &&
-        !o.riderId &&
-        !o.rider?.id &&
-        ["MANUAL", "SHOPIFY", "WHATSAPP", undefined, null].includes(o.source)
-    )
-    .filter((o) => {
-      if (!search.trim()) return true;
-      const q = search.trim().toLowerCase();
-      const hay = [
-        o.orderNumber,
-        o.externalId,
-        o.customerName,
-        o.phone,
-        o.customerPhone,
-        o.address,
-        o.destination,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
-    });
-
-  useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return;
-    const onUpdate = () => {
-      queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
-      queryClient.invalidateQueries({ queryKey: ["ordersPage"] });
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-    };
-    socket.on("order:created", onUpdate);
-    socket.on("order:updated", onUpdate);
-    socket.on("order:assigned", onUpdate);
-    socket.on("order:unassigned", onUpdate);
-    socket.on("order:deleted", onUpdate);
-    socket.on("order:status:update", onUpdate);
-    return () => {
-      socket.off("order:created", onUpdate);
-      socket.off("order:updated", onUpdate);
-      socket.off("order:assigned", onUpdate);
-      socket.off("order:unassigned", onUpdate);
-      socket.off("order:deleted", onUpdate);
-      socket.off("order:status:update", onUpdate);
-    };
-  }, [queryClient]);
+  const orders: any[] = Array.isArray(data) ? data : data?.items || data?.data || [];
 
   const refresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
     queryClient.invalidateQueries({ queryKey: ["ordersPage"] });
+    queryClient.invalidateQueries({ queryKey: ["dispatchOrders"] });
     queryClient.invalidateQueries({ queryKey: ["orders"] });
   };
 
-  const openAssign = (order: any) => {
+  const openAssign = (order: any, reassign = false) => {
     setAssignOrderId(order.id);
+    setIsReassign(reassign);
     setAssignOpen(true);
   };
 
@@ -183,7 +118,7 @@ const DispatchPage: React.FC = () => {
     try {
       const values = await form.validateFields();
       setEditLoading(true);
-      await client.put(`/orders/${editingOrder.id}`, {
+      const payload: any = {
         customerName: values.customerName,
         phone: values.phone,
         address: values.address,
@@ -193,7 +128,8 @@ const DispatchPage: React.FC = () => {
         orderNumber: values.orderNumber,
         externalId: values.orderNumber,
         scheduledAt: values.scheduledAt ? values.scheduledAt.toISOString() : null,
-      });
+      };
+      await client.put(`/orders/${editingOrder.id}`, payload);
       message.success("Order updated");
       setEditOpen(false);
       setEditingOrder(null);
@@ -210,7 +146,7 @@ const DispatchPage: React.FC = () => {
     const displayNo = getOrderDisplayNumber(order);
     Modal.confirm({
       title: "Are you sure you want to delete this order?",
-      content: `Order ${displayNo} will be removed from Dispatch and Orders. You can restore it later.`,
+      content: `Order ${displayNo} will be removed from Orders and Dispatch. You can restore it later from deleted records.`,
       okText: "Delete",
       okType: "danger",
       cancelText: "Cancel",
@@ -284,21 +220,32 @@ const DispatchPage: React.FC = () => {
     {
       title: "Actions",
       key: "actions",
-      width: 260,
+      width: 280,
       fixed: "right" as const,
       render: (_: any, record: any) => {
         const hasRider = !!(record.riderId || record.rider?.id);
         return (
           <Space size={4} wrap>
-            {!hasRider && (
+            {!hasRider ? (
               <Tooltip title="Assign rider">
                 <Button
                   type="primary"
                   size="small"
                   icon={<UserAddOutlined />}
-                  onClick={() => openAssign(record)}
+                  onClick={() => openAssign(record, false)}
                 >
                   Assign
+                </Button>
+              </Tooltip>
+            ) : (
+              <Tooltip title="Reassign rider">
+                <Button
+                  size="small"
+                  style={{ background: "#fa8c16", borderColor: "#fa8c16", color: "#fff" }}
+                  icon={<SwapOutlined />}
+                  onClick={() => openAssign(record, true)}
+                >
+                  Reassign
                 </Button>
               </Tooltip>
             )}
@@ -328,56 +275,51 @@ const DispatchPage: React.FC = () => {
     },
   ];
 
+  if (isLoading && !orders.length) {
+    return (
+      <div style={{ textAlign: "center", padding: 48 }}>
+        <Spin size="large" />
+      </div>
+    );
+  }
+
   return (
     <div>
-      <Card
-        title="Dispatch"
-        extra={
-          <Space>
-            <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
-              Refresh
-            </Button>
-            <Button onClick={() => setWaOpen(true)}>WhatsApp Order</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-              Create Order
-            </Button>
-          </Space>
+      <div style={{ marginBottom: 12, display: "flex", gap: 8 }}>
+        <Input
+          prefix={<SearchOutlined />}
+          placeholder="Search by order number, customer, or phone..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          allowClear
+          style={{ maxWidth: 360 }}
+        />
+      </div>
+
+      <Table
+        rowKey="id"
+        columns={columns}
+        dataSource={orders}
+        loading={isLoading}
+        scroll={{ x: 1200 }}
+        pagination={{
+          current: queryFilters.page,
+          pageSize: queryFilters.limit,
+          total: data?.total,
+          showSizeChanger: true,
+          onChange: (page, pageSize) => {
+            // parent may control filters; local search still works
+          },
+        }}
+        rowSelection={
+          onSelectionChange
+            ? {
+                selectedRowKeys,
+                onChange: (keys) => onSelectionChange(keys as string[]),
+              }
+            : undefined
         }
-      >
-        <div style={{ marginBottom: 8, color: "#6b7280", fontSize: 13 }}>
-          Showing unassigned NEW orders (Manual, Shopify, WhatsApp). Assigned orders appear on the
-          Orders page.
-        </div>
-        <Row gutter={12} style={{ marginBottom: 16 }}>
-          <Col flex="auto">
-            <Input
-              prefix={<SearchOutlined />}
-              placeholder="Search by order number, customer, or phone..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              allowClear
-            />
-          </Col>
-        </Row>
-
-        {isLoading && !orders.length ? (
-          <div style={{ textAlign: "center", padding: 48 }}>
-            <Spin size="large" />
-          </div>
-        ) : (
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={orders}
-            loading={isLoading}
-            scroll={{ x: 1200 }}
-            pagination={{ pageSize: 25, showSizeChanger: true }}
-          />
-        )}
-      </Card>
-
-      <CreateOrderModal open={createOpen} onClose={() => setCreateOpen(false)} />
-      <CreateWhatsAppOrderModal open={waOpen} onClose={() => setWaOpen(false)} />
+      />
 
       <AssignRiderModal
         open={assignOpen}
@@ -385,12 +327,14 @@ const DispatchPage: React.FC = () => {
         onClose={() => {
           setAssignOpen(false);
           setAssignOrderId(null);
+          setIsReassign(false);
         }}
         onAssigned={() => {
           setAssignOpen(false);
           setAssignOrderId(null);
+          setIsReassign(false);
           refresh();
-          message.success("Rider assigned — order moved to Orders");
+          message.success(isReassign ? "Rider reassigned" : "Rider assigned");
         }}
       />
 
@@ -468,4 +412,4 @@ const DispatchPage: React.FC = () => {
   );
 };
 
-export default DispatchPage;
+export default OrdersTable;

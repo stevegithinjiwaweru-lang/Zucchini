@@ -22,9 +22,21 @@ export const env = {
   ),
   corsOrigin: process.env.CORS_ORIGIN || "http://localhost:5173",
 
-  // Shopify OAuth / App configuration (optional in environments that don't use Shopify)
+  /**
+   * Shopify App configuration.
+   *
+   * SHOPIFY_APP_URL / PUBLIC_BACKEND_URL:
+   *   Public base URL of THIS backend (e.g. https://zucchini-backend.onrender.com).
+   *   NOT the customer storefront (https://zucchini.co.ke).
+   *   Used to build OAuth redirect_uri and webhook callback URLs.
+   *
+   * SHOPIFY_REDIRECT_URI:
+   *   Optional explicit override. Default: {SHOPIFY_APP_URL}/api/shopify/callback
+   *   Must match the Allowed redirection URL in the Shopify Partner app settings.
+   */
   shopifyClientId: process.env.SHOPIFY_CLIENT_ID || "",
   shopifyClientSecret: process.env.SHOPIFY_CLIENT_SECRET || "",
-  shopifyAppUrl: process.env.SHOPIFY_APP_URL || "",
+  shopifyAppUrl: (process.env.SHOPIFY_APP_URL || process.env.PUBLIC_BACKEND_URL || "").replace(/\/$/, ""),
+  publicBackendUrl: (process.env.PUBLIC_BACKEND_URL || process.env.SHOPIFY_APP_URL || "").replace(/\/$/, ""),
   shopifyRedirectUri: process.env.SHOPIFY_REDIRECT_URI || "",
 };

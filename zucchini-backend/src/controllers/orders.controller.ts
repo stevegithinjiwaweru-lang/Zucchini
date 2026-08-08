@@ -66,6 +66,13 @@ export const listOrders = asyncHandler(async (req: AuthedRequest, res: Response)
     where.isDeleted = true;
   }
 
+  // Dispatch page: NEW + unassigned + inbound sources only
+  if (String(req.query.dispatchQueue || "") === "true") {
+    where.status = OrderStatus.NEW;
+    where.riderId = null;
+    where.source = { in: ["MANUAL", "SHOPIFY", "WHATSAPP"] };
+  }
+
   const normalizedStatus = normalizeStatusFilter(status);
   if (normalizedStatus) where.status = normalizedStatus;
   if (riderId) where.riderId = riderId;
@@ -280,17 +287,12 @@ export const createOrder = asyncHandler(async (req: AuthedRequest, res: Response
     getIO()?.emit("order:created", serialized);
     emitDashboard();
     res.status(201).json({ ok: true, data: serialized, order: serialized });
-   } catch (e: any) {
-    console.error("CREATE ORDER ERROR FULL:", e);
-
+  } catch (e: any) {
     if (e?.code === "P2002" && e?.meta?.target?.includes("externalId")) {
       throw new ApiError(409, "Order number already exists.");
     }
-
-    throw new ApiError(
-      500,
-      e?.message || "Failed to create order"
-    );
+    console.error("createOrder failed:", e?.message || e);
+    throw e;
   }
 });
 

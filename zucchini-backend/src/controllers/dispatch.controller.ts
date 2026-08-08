@@ -5,7 +5,9 @@ import { serializeOrder, MAX_ACTIVE_DELIVERIES, ACTIVE_ORDER_STATUSES } from "..
 import { getIO } from "../socket";
 
 /**
- * Get orders waiting for dispatch (NEW, unassigned, not deleted)
+ * Dispatch queue = NEW + unassigned only.
+ * Sources: MANUAL (dispatcher create), SHOPIFY (webhook), WHATSAPP (transcribed).
+ * Once assigned, the order leaves this list and is managed on the Orders page.
  */
 export async function listDispatches(_req: Request, res: Response) {
   try {
@@ -14,16 +16,18 @@ export async function listDispatches(_req: Request, res: Response) {
         isDeleted: false,
         riderId: null,
         status: OrderStatus.NEW,
+        source: { in: ["MANUAL", "SHOPIFY", "WHATSAPP"] },
       },
       include: { rider: true },
       orderBy: { createdAt: "desc" },
     });
 
+    const data = dispatches.map(serializeOrder);
     return res.json({
       ok: true,
-      data: dispatches.map(serializeOrder),
-      items: dispatches.map(serializeOrder),
-      dispatches: dispatches.map(serializeOrder),
+      data,
+      items: data,
+      dispatches: data,
     });
   } catch (error) {
     console.error("Dispatch list error:", error);
@@ -46,6 +50,13 @@ export async function assignDispatch(req: Request, res: Response) {
     });
     if (!existing) {
       return res.status(404).json({ ok: false, message: "Order not found" });
+    }
+
+    if (existing.status !== OrderStatus.NEW || existing.riderId) {
+      return res.status(400).json({
+        ok: false,
+        message: "Order is already assigned or not in the dispatch queue.",
+      });
     }
 
     const rider = await prisma.rider.findUnique({ where: { id: riderId } });
